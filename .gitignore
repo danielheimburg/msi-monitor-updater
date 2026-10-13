@@ -1,0 +1,9 @@
+.build/
+.swiftpm/
+.DS_Store
+build/
+artifacts/
+records/
+*.bin
+*.pcap
+*.pcapng

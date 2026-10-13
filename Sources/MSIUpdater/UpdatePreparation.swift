@@ -1,0 +1,178 @@
+import Foundation
+
+/// Acquires and verifies a device-bound preparation record, then leaves ISP.
+/// No flash-array or protection writes occur here. A later writer must derive
+/// its plan again from fresh state; this result is a preview, never a resume token.
+struct UpdatePreparation: Encodable, Sendable {
+    let information: MonitorInformation
+    let plan: UpdatePlan
+    let recordDirectory: URL
+
+    static func run(image: FirmwareImage, device: MonitorDevice, parent: URL) async throws -> Self {
+        let activity = ProcessInfo.processInfo.beginActivity(
+            options: [.idleSystemSleepDisabled, .idleDisplaySleepDisabled, .suddenTerminationDisabled],
+            reason: "Read and preserve MSI firmware metadata")
+        defer { ProcessInfo.processInfo.endActivity(activity) }
+        let record = try UpdateRecord(parent: parent)
+        let session = try HIDSession(identity: device, record: record)
+        var entered = false
+        do {
+            let information = try await MonitorProtocol(session: session).information(identity: device)
+            guard try await MonitorProtocol(session: session).information(identity: device) == information else {
+                throw UpdaterError("Repeated monitor identity or preservation reads disagree.")
+            }
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            try record.preserve("monitor.json", data: encoder.encode(information))
+            try record.preserve("calibration.bin", data: Data(information.calibration))
+            try record.preserve("serial.bin", data: Data(information.serial))
+            try record.append("entering-diagnostic-isp", durable: true)
+            // An uncertain entry still requires diagnostic cleanup. This path
+            // never submitted a destructive command, so A1 is appropriate here.
+            entered = true
+            try await enterISP(session)
+            let isp = ScalerISP(session: session)
+            try await isp.initializeForIdentification()
+            guard try await isp.readJEDEC() == [0xC8, 0x40, 0x19] else {
+                throw UpdaterError("Flash identity differs from the reviewed 32MiB device.")
+            }
+            let plan = try await acquirePlan(image: image, isp: isp, record: record)
+            try record.append("diagnostic-reads-verified", durable: true)
+            let reacquired = try await resetAndReacquire(session, previous: device)
+            entered = false
+            let after = try await MonitorProtocol.inspect(reacquired)
+            guard after.model == information.model, after.version == information.version,
+                  after.calibration == information.calibration, after.serial == information.serial else {
+                throw UpdaterError("Monitor data changed across diagnostic preparation.")
+            }
+            try record.preserve("postflight.json", data: encoder.encode(after))
+            try record.append("preparation-complete-no-flash", durable: true)
+            return Self(information: information, plan: plan, recordDirectory: record.directory)
+        } catch {
+            let failure = error
+            await session.close()
+            if entered {
+                // Cleanup must survive caller cancellation and unavailable storage.
+                // It runs only for this diagnostic path, which never writes flash.
+                let cleanupFailure = await exitFailedDiagnostic(device)
+                if let cleanupFailure {
+                    try? record.append("diagnostic-exit-unverified", detail: cleanupFailure, durable: true)
+                    throw UpdaterError("\(failure.localizedDescription) Diagnostic exit could not be verified: \(cleanupFailure)")
+                }
+            }
+            try? record.append("preparation-failed-no-flash", detail: failure.localizedDescription, durable: true)
+            throw failure
+        }
+    }
+
+    /// Isolated from caller cancellation and failed journal storage. This may
+    /// reset only a diagnostic session that has submitted no protection/flash write.
+    static func exitFailedDiagnostic(_ previous: MonitorDevice) async -> String? {
+        await Task.detached { () -> String? in
+            do {
+                let current = try matchingDevice(previous)
+                let normal: MonitorDevice
+                if current.id == previous.id {
+                    let cleanup = try HIDSession(identity: current)
+                    normal = try await resetAndReacquire(cleanup, previous: current)
+                } else {
+                    // A fresh service may already be in normal mode. Never send
+                    // an ISP command merely because an earlier service failed.
+                    normal = current
+                }
+                _ = try await MonitorProtocol.inspect(normal)
+                return nil
+            } catch { return error.localizedDescription }
+        }.value
+    }
+
+    static func acquirePlan(image: FirmwareImage, isp: ScalerISP, record: UpdateRecord,
+                            progress: @Sendable (String) async -> Void = { _ in }) async throws -> UpdatePlan {
+        let originalBank = try await isp.readStatus(.extendedAddress)
+        guard originalBank <= 1 else { throw UpdaterError("Unexpected flash address-bank state.") }
+        var metadata: [Int: [UInt8]] = [:]
+        var loaders: [Int: [UInt8]] = [:]
+        for (index, address) in UpdatePlan.bootCodeAddresses.enumerated() {
+            await progress("Preserving boot code \(index + 1) of 2")
+            loaders[address] = try await acquire(address, count: UpdatePlan.bootCodeLength, isp: isp, record: record)
+        }
+        for (index, address) in UpdatePlan.metadataAddresses.enumerated() {
+            await progress("Preserving firmware metadata \(index + 1) of 4")
+            metadata[address] = try await acquire(address, count: FirmwareImage.blockSize, isp: isp, record: record)
+        }
+        guard try await isp.readStatus(.extendedAddress) == originalBank else {
+            throw UpdaterError("Flash address bank changed during preservation.")
+        }
+        let plan = try UpdatePlan(image: image, metadataSectors: metadata, bootCodeCopies: loaders)
+        try record.preserve("plan.json", data: JSONEncoder().encode(plan))
+        return plan
+    }
+
+    private static func acquire(_ address: Int, count: Int, isp: ScalerISP, record: UpdateRecord) async throws -> [UInt8] {
+        let name = String(format: "physical-%08X.bin", address)
+        try record.append("reading-preservation", detail: name)
+        // Every byte is subsequently checked by UpdatePlan against the pinned
+        // loader or a complete reviewed metadata sector. A second identical read
+        // adds no accepted state; retain repetition only for unknown data.
+        let bytes = try await isp.readPhysical(address: UInt32(address), count: count)
+        try record.preserve(name, data: Data(bytes))
+        return bytes
+    }
+
+    static func selectInterface(_ interface: UInt8, session: HIDSession) async throws {
+        let reply = try await session.exchange(MonitorProtocol.report(1, [0xE0, interface], fill: 0xFF))
+        guard reply == [1, 0x5A, interface] + Array(repeating: 0xFF, count: 61) else {
+            throw UpdaterError("Controller interface selection was not acknowledged.")
+        }
+    }
+
+    static func enterISP(_ session: HIDSession) async throws {
+        _ = try await session.exchange(MonitorProtocol.report(1, Array("580040:\r".utf8)), expectsReply: false)
+        try await Task.sleep(for: .milliseconds(200))
+        try await selectInterface(1, session: session)
+        try await Task.sleep(for: .seconds(2))
+    }
+
+    static func exitDiagnostic(_ session: HIDSession) async throws {
+        _ = try await session.exchange(MonitorProtocol.report(4, [0xA1, 0, 0, 4, 0x34, 6, 0x3C]), expectsReply: false)
+        await session.close()
+    }
+
+    /// Reset may remove the USB service before output completion. A fresh bound
+    /// service, followed by the caller's normal-mode verification, decides success.
+    /// Only call after non-flashing diagnostics or fully verified programming.
+    static func resetAndReacquire(_ session: HIDSession, previous: MonitorDevice) async throws -> MonitorDevice {
+        var submissionFailure: String?
+        do { try await exitDiagnostic(session) }
+        catch { submissionFailure = error.localizedDescription }
+        await session.close()
+        do { return try await reacquire(previous) }
+        catch {
+            throw UpdaterError("\(error.localizedDescription) Reset submission: \(submissionFailure ?? "completed").")
+        }
+    }
+
+    static func matchingDevice(_ previous: MonitorDevice) throws -> MonitorDevice {
+        let matches = try MonitorDevice.discover().filter { $0.serial == previous.serial && $0.location == previous.location }
+        guard matches.count == 1, let device = matches.first else {
+            throw UpdaterError("The original monitor is absent or ambiguous after ISP.")
+        }
+        return device
+    }
+
+    static func reacquire(_ previous: MonitorDevice) async throws -> MonitorDevice {
+        let deadline = ContinuousClock.now + .seconds(45)
+        while ContinuousClock.now < deadline {
+            if let device = try? matchingDevice(previous), device.id != previous.id {
+                // A fresh USB service is necessary but not sufficient for app
+                // readiness. Allow the vendor's normal startup settling period.
+                // Earlier diagnostics settled30s after removal. The bridge can
+                // appear transiently before the scaler finishes rebooting.
+                try await Task.sleep(for: .seconds(30))
+                return try matchingDevice(device)
+            }
+            try await Task.sleep(for: .milliseconds(250))
+        }
+        throw UpdaterError("The monitor did not re-enumerate after ISP exit.")
+    }
+}
