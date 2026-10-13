@@ -34,6 +34,10 @@ enum MSIUpdaterMain {
                     "paddedByteLength": image.paddedLength,
                     "flashEligibleModel": image.profile.isFlashSupported,
                     "backend": image.profile.backend.rawValue,
+                    "internalTransport": image.profile.interface == 0 ? "UART" : "I2C",
+                    "requiredPanel": image.profile.requiredPanel as Any? ?? NSNull(),
+                    "sameBranchRequired": image.profile.sameBranchRequired,
+                    "bootCodeByteLength": image.profile.isFlashSupported ? image.profile.bootCodeLength : 0,
                     "partitionTableInspected": image.profile.backend == .novatek,
                     "hardwareValidation": "Previous build: MEG342C FW046 reinstallation only; this expansion is offline-validated",
                     "partitions": image.partitions.map { ["offset": $0.offset, "length": $0.length] }
@@ -51,7 +55,7 @@ enum MSIUpdaterMain {
                     guard image.profile.isFlashSupported else {
                         throw UpdaterError("This monitor model is available for offline image inspection only.")
                     }
-                    if arguments[0] == "--update-fw046", image.version != "046" {
+                    if arguments[0] == "--update-fw046", (image.version != "046" || image.profile.modelCode != 0x90) {
                         throw UpdaterError("--update-fw046 accepts only the reviewed FW046 image. Use --update for another reviewed release.")
                     }
                 }
@@ -84,13 +88,25 @@ enum MSIUpdaterMain {
 
     /// An offline snapshot is diagnostic input only. Live updates acquire fresh state.
     private static func offlinePlan(image: FirmwareImage, snapshot: URL) throws -> UpdatePlan {
-        guard image.profile.isFlashSupported, image.profile.modelCode == 0x90 else {
-            throw UpdaterError("Offline planning supports only reviewed MEG342C targets.")
+        guard image.profile.isFlashSupported else {
+            throw UpdaterError("Offline planning requires a reviewed dual-slot target.")
         }
         let information = try JSONDecoder().decode(MonitorInformation.self,
             from: Data(contentsOf: snapshot.appendingPathComponent("monitor.json")))
-        guard information.model == 0x90 else {
+        guard information.model == image.profile.modelCode else {
             throw UpdaterError("The snapshot belongs to a different monitor model.")
+        }
+        try image.requireCompatible(with: information)
+        let hardwareURL = snapshot.appendingPathComponent("hardware.json")
+        let hardware: ScalerHardware
+        if FileManager.default.fileExists(atPath: hardwareURL.path) {
+            hardware = try JSONDecoder().decode(ScalerHardware.self, from: Data(contentsOf: hardwareURL))
+            try hardware.validate()
+        } else if information.model == 0x90 {
+            // Historical MEG snapshots precede this separate hardware record.
+            hardware = ScalerHardware(scalerID: 0xA500, flashID: [0xC8, 0x40, 0x19])
+        } else {
+            throw UpdaterError("This snapshot needs a verified hardware.json identity record.")
         }
         func readRange(address: Int, count: Int) throws -> [UInt8] {
             let url = snapshot.appendingPathComponent(String(format: "physical-%08X.bin", address))
@@ -101,15 +117,15 @@ enum MSIUpdaterMain {
             return Array(try Data(contentsOf: url))
         }
         var metadata: [Int: [UInt8]] = [:]
-        for address in UpdatePlan.metadataAddresses {
+        for address in UpdatePlan.metadataAddresses(capacity: hardware.capacity) {
             metadata[address] = try readRange(address: address, count: FirmwareImage.blockSize)
         }
         var loaders: [Int: [UInt8]] = [:]
-        for address in UpdatePlan.bootCodeAddresses {
-            loaders[address] = try readRange(address: address, count: UpdatePlan.bootCodeLength)
+        for address in UpdatePlan.bootCodeAddresses(capacity: hardware.capacity) {
+            loaders[address] = try readRange(address: address, count: image.profile.bootCodeLength)
         }
         return try UpdatePlan(image: image, installedVersion: information.version,
-            metadataSectors: metadata, bootCodeCopies: loaders)
+            metadataSectors: metadata, bootCodeCopies: loaders, flashCapacity: hardware.capacity)
     }
 }
 
@@ -153,7 +169,7 @@ struct UpdaterView: View {
         guard image.profile.isFlashSupported else { return "This model supports offline inspection only." }
         guard let information else { return "Read monitor information to check the installed release." }
         do {
-            try image.requireUpdateAllowed(installedVersion: information.version)
+            try image.requireCompatible(with: information)
             return nil
         } catch { return error.localizedDescription }
     }
@@ -162,7 +178,7 @@ struct UpdaterView: View {
         VStack(alignment: .leading, spacing: 20) {
             Text("MSI Firmware Updater").font(.title)
             HStack {
-                Text("MEG 342C QD-OLED · Preview").foregroundStyle(.secondary)
+                Text("MSI scaler firmware · Preview").foregroundStyle(.secondary)
                 Spacer()
                 Button { showingHelp = true } label: { Image(systemName: "questionmark.circle") }
                     .buttonStyle(.plain)
@@ -189,7 +205,7 @@ struct UpdaterView: View {
                         if inspecting { ProgressView().controlSize(.small) }
                     }
                     if let information {
-                        Text("MEG342C · FW\(information.version) · calibration and serial checksums verified")
+                        Text("\(FirmwareImage.reviewedProfiles.first(where: { $0.modelCode == information.model })?.modelName ?? "MSI monitor") · FW\(information.version) · preservation checksums verified")
                     }
                 }.frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -204,6 +220,8 @@ struct UpdaterView: View {
                         LabeledContent("Update method", value: image.profile.backend.rawValue)
                             .font(.caption)
                         if image.profile.backend == .novatek {
+                            LabeledContent("Internal connection", value: image.profile.interface == 0 ? "UART" : "I²C")
+                                .font(.caption)
                             Text("\(image.partitions.count) partitions · bounds and overlap checks passed")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
@@ -272,15 +290,15 @@ struct UpdaterView: View {
         .sheet(isPresented: $showingHelp) {
             VStack(alignment: .leading, spacing: 16) {
                 Text("Before you update").font(.title2).fontWeight(.semibold)
-                Text("Reviewed official MEG342C firmware releases are accepted. Only FW046 reinstallation has been tested on hardware; other releases have been validated offline. Modified images are unsupported.")
-                Text("Version transitions have not been tested on hardware. Downgrades are disabled. Images from other monitor models may be inspected offline when present in the catalog; flashing those models is unsupported.")
+                Text("Reviewed official images are accepted only for their exact model and hardware branch. This project has tested MEG 342C FW046 reinstalls; additional profiles are inferred from offline analysis. Modified images are unsupported.")
+                Text("Version transitions have not been tested on hardware. Downgrades are disabled. Additional models use inferred compatibility from firmware and Windows backend analysis. Their exact scaler, flash, loader and installed firmware must pass preflight; only MEG 342C FW046 reinstalls have been tested by this project.")
                 Text("Use a reliable USB data cable directly to the Mac. Release Windows VM passthrough and close other monitor-control applications.")
                 Text("Keep the Mac and monitor powered and connected. The display will go blank and reconnect during the final restart. A full progress bar finishes writing; the app still verifies and restores your monitor afterward.")
                 Text("Backup records contain device-specific calibration, serial data and USB traffic. Keep them private. If the update stops, preserve the record and keep the monitor connected; automatic resume and damaged-firmware recovery are unavailable.")
                 Text("Independent utility. This app is not developed or endorsed by MSI.")
                     .foregroundStyle(.secondary)
                 HStack {
-                    Link("Official firmware", destination: URL(string: "https://www.msi.com/Monitor/MEG-342C-QD-OLED/support#firmware")!)
+                    Link("Official firmware", destination: URL(string: "https://www.msi.com/support")!)
                     Spacer()
                     Button("Done") { showingHelp = false }.keyboardShortcut(.defaultAction)
                 }

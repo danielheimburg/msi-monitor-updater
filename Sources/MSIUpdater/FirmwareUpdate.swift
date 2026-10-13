@@ -52,28 +52,25 @@ struct FirmwareUpdate: Encodable, Sendable {
             guard try await MonitorProtocol(session: session).information(identity: device) == information else {
                 throw UpdaterError("Repeated monitor identity or preservation reads disagree.")
             }
-            try image.requireUpdateAllowed(installedVersion: information.version)
+            try image.requireCompatible(with: information)
             try record.preserve("monitor.json", data: JSONEncoder().encode(information))
             try record.preserve("calibration.bin", data: Data(information.calibration))
             try record.preserve("serial.bin", data: Data(information.serial))
             try record.append("entering-isp", durable: true)
             entered = true
-            try await UpdatePreparation.enterISP(session)
-            let isp = ScalerISP(session: session)
-            try await isp.initializeForIdentification()
-            guard try await isp.readJEDEC() == [0xC8, 0x40, 0x19] else {
-                throw UpdaterError("Flash identity differs from the reviewed 32MiB device.")
-            }
+            try await UpdatePreparation.enterISP(session, interface: image.profile.interface)
+            let isp = try await ScalerISP.connect(session: session, interface: image.profile.interface)
+            try record.preserve("hardware.json", data: JSONEncoder().encode(isp.hardware))
             await progress(.preparing("Preserving boot code and firmware metadata"))
             let plan = try await UpdatePreparation.acquirePlan(image: image, installedVersion: information.version, isp: isp, record: record) { message in await progress(.preparing(message)) }
             // The upper branch also overwrites the rest of its first six blocks.
             // Require and preserve the pinned contents across that entire area.
-            if plan.destinationBank == 1 {
+            if plan.destinationBank == 1 && isp.hardware.capacity > 0x1000000 && plan.bootCodeLength < 0x6000 {
                 await progress(.preparing("Preserving and checking the remaining boot area"))
-                let address = FirmwareImage.bankSize + UpdatePlan.bootCodeLength
-                let count = 0x6000 - UpdatePlan.bootCodeLength
+                let address = FirmwareImage.bankSize + plan.bootCodeLength
+                let count = 0x6000 - plan.bootCodeLength
                 let bytes = try await isp.readPhysical(address: UInt32(address), count: count)
-                guard bytes == Array(image.bytes[UpdatePlan.bootCodeLength..<0x6000]) else {
+                guard bytes == Array(image.bytes[plan.bootCodeLength..<0x6000]) else {
                     throw UpdaterError("The upper boot area differs from the pinned image; stop before overwriting it.")
                 }
                 try record.preserve("upper-boot-area-tail.bin", data: Data(bytes))
@@ -82,7 +79,7 @@ struct FirmwareUpdate: Encodable, Sendable {
             try record.append("protection-change-intent", durable: true)
             // Set before submission: a lost reply cannot make this diagnostic-only.
             mutationStarted = true
-            try await isp.initializeCapturedProgramming()
+            try await isp.initializeProgramming()
             try record.append("protection-change-verified", durable: true)
             var selectedBank: Int?
             for (index, operation) in plan.operations.enumerated() {
@@ -90,8 +87,10 @@ struct FirmwareUpdate: Encodable, Sendable {
                 let address = UInt32(operation.address % FirmwareImage.bankSize)
                 if selectedBank != bank {
                     try await isp.selectBank(UInt8(bank))
-                    guard try await isp.readStatus(.extendedAddress) == UInt8(bank) else {
-                        throw UpdaterError("The flash address bank does not match the next operation.")
+                    if isp.hardware.capacity > 0x1000000 {
+                        guard try await isp.readStatus(.extendedAddress) == UInt8(bank) else {
+                            throw UpdaterError("The flash address bank does not match the next operation.")
+                        }
                     }
                     selectedBank = bank
                 }
@@ -104,7 +103,9 @@ struct FirmwareUpdate: Encodable, Sendable {
                     bytes = Array(repeating: 0, count: 512)
                 }
                 let detail = String(format: "%d physical=%08X bytes=%d", index, operation.address, bytes.count)
-                try record.append("program-intent", detail: detail, durable: true)
+                let intent = image.profile.interface == 0 && bytes.count == FirmwareImage.blockSize
+                    ? "erase-program-sector-intent" : "program-intent"
+                try record.append(intent, detail: detail, durable: true)
                 if bytes.count == FirmwareImage.blockSize {
                     try await isp.programBlock(address: address, bytes: bytes)
                 } else {
@@ -116,7 +117,7 @@ struct FirmwareUpdate: Encodable, Sendable {
                 let needsPhysicalRead: Bool
                 switch operation {
                 case .programImageBlock(let offset, _):
-                    needsPhysicalRead = offset == (plan.destinationBank == 0 ? 0x8000 : 0)
+                    needsPhysicalRead = offset == (plan.destinationBank == 1 && isp.hardware.capacity > 0x1000000 ? 0 : 0x8000)
                 default: needsPhysicalRead = true
                 }
                 if needsPhysicalRead {
@@ -131,7 +132,7 @@ struct FirmwareUpdate: Encodable, Sendable {
             try await verifyFinalLayout(plan: plan, isp: isp, record: record)
             try record.append("all-programming-verified-reset-intent", durable: true)
             await progress(.restarting)
-            let returned = try await UpdatePreparation.resetAndReacquire(session, previous: device)
+            let returned = try await UpdatePreparation.resetAndReacquire(session, previous: device, interface: image.profile.interface)
             entered = false
             await progress(.restoring)
             let restored = try await restoreAndVerify(information, image: image, device: returned, record: record)
@@ -144,7 +145,7 @@ struct FirmwareUpdate: Encodable, Sendable {
             if entered && !mutationStarted {
                 // No flash/protection writes: reuse diagnostic exit, independent
                 // of caller cancellation and any failed evidence storage.
-                let cleanupError = await UpdatePreparation.exitFailedDiagnostic(device)
+                let cleanupError = await UpdatePreparation.exitFailedDiagnostic(device, interface: image.profile.interface)
                 if let cleanupError {
                     failure += " Diagnostic exit could not be verified: \(cleanupError)"
                     try? record.append("diagnostic-exit-unverified", detail: cleanupError, durable: true)
@@ -163,13 +164,13 @@ struct FirmwareUpdate: Encodable, Sendable {
                                           isp: ScalerISP, record: UpdateRecord) async throws {
         var sectors: [Int: [UInt8]] = [:]
         var loaders: [Int: [UInt8]] = [:]
-        for address in UpdatePlan.metadataAddresses {
+        for address in UpdatePlan.metadataAddresses(capacity: isp.hardware.capacity) {
             let bytes = try await isp.readPhysical(address: UInt32(address), count: FirmwareImage.blockSize)
             sectors[address] = bytes
             try record.preserve(String(format: "final-metadata-%08X.bin", address), data: Data(bytes))
         }
-        for address in UpdatePlan.bootCodeAddresses {
-            let bytes = try await isp.readPhysical(address: UInt32(address), count: UpdatePlan.bootCodeLength)
+        for address in UpdatePlan.bootCodeAddresses(capacity: isp.hardware.capacity) {
+            let bytes = try await isp.readPhysical(address: UInt32(address), count: plan.bootCodeLength)
             loaders[address] = bytes
             try record.preserve(String(format: "final-loader-%08X.bin", address), data: Data(bytes))
         }
@@ -184,13 +185,13 @@ struct FirmwareUpdate: Encodable, Sendable {
             let normal = MonitorProtocol(session: session)
             try await normal.requireReadyForRestore()
             let beforeRestore = try await normal.information(identity: device)
-            guard beforeRestore.model == original.model, beforeRestore.version == image.version else {
+            guard beforeRestore.model == original.model, beforeRestore.panel == original.panel, beforeRestore.version == image.version else {
                 throw UpdaterError("Post-reset model or firmware does not match the requested update.")
             }
             try record.append("preservation-restore-intent", durable: true)
             try await normal.restore(original)
             let after = try await normal.information(identity: device)
-            guard after.model == original.model, after.version == image.version,
+            guard after.model == original.model, after.panel == original.panel, after.version == image.version,
                   after.calibration == original.calibration, after.serial == original.serial else {
                 throw UpdaterError("Post-update firmware, calibration or serial verification failed.")
             }

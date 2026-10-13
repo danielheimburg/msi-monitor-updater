@@ -9,6 +9,7 @@ struct MonitorInformation: Codable, Equatable, Sendable {
     let version: String
     let calibration: [UInt8]
     let serial: [UInt8]
+    var panel: String? = nil
 }
 
 struct MonitorProtocol: Sendable {
@@ -33,25 +34,39 @@ struct MonitorProtocol: Sendable {
 
     func information(identity: MonitorDevice) async throws -> MonitorInformation {
         let modelData = try await read("5800140\r", header: "5b00140", count: 3)
-        guard modelData == [0x30, 0x30, 0x90] else {
-            throw UpdaterError("The controller does not identify a MEG342C monitor.")
+        guard modelData.prefix(2) == [0x30, 0x30],
+              FirmwareImage.reviewedProfiles.contains(where: { $0.modelCode == modelData[2] }) else {
+            throw UpdaterError("The controller does not identify a supported MSI monitor.")
         }
         let versionData = try await read("58001<0\r", header: "5b001<0", count: 3)
         guard versionData.allSatisfy({ (0x30...0x39).contains($0) }) else {
             throw UpdaterError("The monitor returned an invalid firmware version.")
         }
+        let panel: String?
+        if FirmwareImage.reviewedProfiles.contains(where: { $0.modelCode == modelData[2] && $0.requiredPanel != nil }) {
+            let reply = try await session.exchange(Self.report(1, Array("58001?0\r".utf8)))
+            let prefix = [UInt8(1)] + Array("5b001?0".utf8)
+            let length = Int(reply[prefix.count])
+            let end = prefix.count + 1 + length
+            guard reply.starts(with: prefix), length > 0, end < reply.count,
+                  reply[end] == 13, reply[(end + 1)...].allSatisfy({ $0 == 0 }),
+                  reply[(prefix.count + 1)..<end].allSatisfy({ (32...126).contains($0) }) else {
+                throw UpdaterError("Invalid panel identity response.")
+            }
+            panel = String(decoding: reply[(prefix.count + 1)..<end], as: UTF8.self)
+        } else { panel = nil }
         let calibration = try await read("580[000\r", header: "5b00[", count: 12, checksum: true)
         let serial = try await read("5800131\r", header: "5b00131", count: 13, checksum: true)
         return MonitorInformation(usbSerial: identity.serial, location: identity.location,
             registryID: identity.id, model: modelData[2], version: String(decoding: versionData, as: UTF8.self),
-            calibration: calibration, serial: serial)
+            calibration: calibration, serial: serial, panel: panel)
     }
 
     /// Vendor C0 preservation transaction. The caller must use freshly acquired,
     /// durably saved data from this same monitor, after verified programming/reset.
     /// An uncertain acknowledgement stops the transaction without replay.
     func restore(_ information: MonitorInformation) async throws {
-        guard information.model == 0x90, information.calibration.count == 12,
+        guard FirmwareImage.reviewedProfiles.contains(where: { $0.modelCode == information.model }), information.calibration.count == 12,
               information.serial.count == 13 else {
             throw UpdaterError("Invalid monitor preservation data.")
         }

@@ -13,7 +13,7 @@ The monitor, USB bridge, scaler and flash are separate components. Their firmwar
 
 ## Flash profile
 
-The vendor lookup chooses the first matching descriptor, including a wildcard in one field. For `C8 40 19`, descriptor `4E` specifies 65,536 units of 512 bytes, or 32 MiB. The utility supports this profile rather than the entire vendor flash table.
+The vendor lookup chooses the first matching descriptor, including a wildcard in one field. For `C8 40 19`, descriptor `4E` specifies 65,536 units of 512 bytes, or 32 MiB. The local hardware evidence establishes this profile. Additional inferred policies are listed in [support expansion](support-expansion.md); the full vendor flash table is not enabled.
 
 Physical program pages are 256 bytes; vendor checksum units are 512 bytes; staged update blocks are 4,096 bytes. These granularities serve different operations. A chip name alone is insufficient to select protection commands or programming timings.
 

@@ -1,6 +1,6 @@
 # Documentation
 
-The updater supports the MEG 342C QD-OLED, its recognized installed layouts and six exact official firmware releases. The references below describe the app's behavior, supported protocol and firmware structure.
+The updater recognizes exact official images for the reviewed MSI scaler profiles. Additional writers use inferred compatibility with runtime hardware and installed-state checks; see the complete model matrix in [support expansion](msi/support-expansion.md). The references below describe the app's behavior, supported protocol and firmware structure.
 
 ## App
 

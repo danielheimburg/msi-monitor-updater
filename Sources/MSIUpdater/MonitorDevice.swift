@@ -10,6 +10,10 @@ struct MonitorDevice: Identifiable, Sendable {
 
     static let reportDescriptor = "05010900a1018501150026ff0019012908953f750881021901290891028502150026ff0019012908953f750881021901290891028504150026ff0019012908953f750881021901290891020600ff0901a10185820901150026ff007508957ab10285530901150026ff00750896d402b102c0c0"
 
+    // Source-bound to official MPG321UR MCU5.6 and Xbox MCU5.2. Reports1-4
+    // use the same64-byte contract; the extra report3 and feature72 are unused.
+    static let legacyReportDescriptor = "05010900a1018501150025ff19012908953f750881021901290891028502150025ff19012908953f750881021901290891028503150025ff19012908953f750881021901290891028504150025ff19012908953f750881021901290891020600ff0901a10185720901150025ff750895a7b102c0c0"
+
     static func discover() throws -> [MonitorDevice] {
         let manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(0))
         IOHIDManagerSetDeviceMatching(manager, [kIOHIDVendorIDKey: 0x1462, kIOHIDProductIDKey: 0x3FA4] as CFDictionary)
@@ -19,7 +23,8 @@ struct MonitorDevice: Identifiable, Sendable {
                 (IOHIDDeviceGetProperty(device, key as CFString) as? NSNumber)?.intValue
             }
             let descriptor = IOHIDDeviceGetProperty(device, kIOHIDReportDescriptorKey as CFString) as? Data
-            guard descriptor?.map({ String(format: "%02x", $0) }).joined() == reportDescriptor,
+            guard let descriptor,
+                  [reportDescriptor, legacyReportDescriptor].contains(descriptor.map { String(format: "%02x", $0) }.joined()),
                   number(kIOHIDMaxInputReportSizeKey) == 64,
                   number(kIOHIDMaxOutputReportSizeKey) == 64,
                   let location = number(kIOHIDLocationIDKey),

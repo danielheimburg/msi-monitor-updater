@@ -6,11 +6,11 @@ Vendor firmware is not a complete monitor backup. Before programming, the update
 
 - Twelve calibration bytes and thirteen serial bytes, with their additive byte checksums.
 - USB serial, location and service identity for transaction binding and reset reacquisition.
-- Both 5,120-byte known boot copies and all four 4 KiB metadata sectors.
+- Capacity-specific boot/metadata copies: 32 MiB needs two boot copies and four metadata sectors; 8/16 MiB needs one boot copy and two sectors. Additional models bind 24 KiB boot regions; MEG retains its measured 5,120-byte copies with a separate upper-tail check.
 - Image digest, ordered physical plan, durable phase intent and raw exchanges.
 - The remaining upper boot-area bytes when required by the destination plan.
 
-Optional vendor EDID retention is a separate operation. These records do not contain a full 32 MiB flash backup and are not damaged-firmware recovery images.
+Optional vendor EDID retention is a separate operation. These records do not contain a complete flash backup and are not damaged-firmware recovery images.
 
 ## Verification scope
 

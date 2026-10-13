@@ -195,7 +195,7 @@ final class HIDChannel: @unchecked Sendable {
 
     /// A timeout invalidates this session. It never means a command had no effect.
     func exchange(_ packet: [UInt8], expectsReply: Bool = true) async throws -> [UInt8] {
-        guard packet.count == 64, [UInt8(1), 4].contains(packet[0]) else {
+        guard packet.count == 64, [UInt8(1), 2, 4].contains(packet[0]) else {
             throw UpdaterError("Invalid outgoing HID report.")
         }
         try Task.checkCancellation()

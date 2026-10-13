@@ -21,9 +21,9 @@ The executable uses Swift 6, Foundation, CryptoKit, IOKit HID, AppKit and SwiftU
 
 Image and device validation precede programming. The plan uses fresh physical bytes; saved records cannot be decoded into executable resume plans. Unknown metadata, ambiguous markers and unsupported hardware are rejected.
 
-The active metadata must match the reported installed release, independently of the selected target. Expected final sectors apply the planned writes to preserved source sectors, retaining untouched predecessor tables. Final verification checks this successor rather than deriving a new plan from target-only assumptions. The shared known loader remains pinned; upper-bank boot-tail writes require exact matching bytes.
+The active metadata must match the reported installed release, independently of the selected target. Expected final sectors apply the planned writes to preserved source sectors, retaining untouched predecessor tables. Final verification checks this successor rather than deriving a new plan from target-only assumptions. Each model’s known boot code is pinned. Additional models compare the entire immutable 24 KiB boot area; the existing MEG path preserves its measured 5 KiB copies and separately checks the upper boot tail before overwriting it.
 
-Offline image inspection and snapshot planning perform file operations only. Other-model catalogs are inspection-only, and the live writer rejects downgrades before ISP entry.
+Offline image inspection and snapshot planning perform file operations only. Catalogs explicitly distinguish inferred writer profiles from inspection-only backends. GUI, CLI and offline planning reject wrong models, hardware branches, required panels and downgrades. FirmwareCatalog owns reviewed artifact data; FirmwareImage owns parsing and policy.
 
 Only one exchange is outstanding at a time. Output completion and input arrival are independent events and may arrive in either order. A successful output callback means host submission completed; it does not establish a flash commit or a valid response. Framing and command-specific checks gate each dependent operation.
 

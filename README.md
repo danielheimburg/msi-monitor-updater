@@ -2,22 +2,22 @@
 
 <img src="Resources/AppIcon.png" width="80" height="80" alt="MSI Firmware Updater icon">
 
-A native macOS utility for installing reviewed official firmware releases on the **MSI MEG 342C QD-OLED**. Built with Swift and SwiftUI, with no third-party package dependencies. This is an independent utility and is not developed or endorsed by MSI.
+A native macOS utility for installing reviewed official firmware releases on supported **MSI monitors**. Built with Swift and SwiftUI, with no third-party package dependencies. This is an independent utility and is not developed or endorsed by MSI.
 
-**Status: preview, with multi-version support verified offline.** The previous build demonstrated FW046 reinstallation. The new code recognizes releases 033, 035, 040, 041, 044 and 046; actual version transitions remain untested. Downgrades and modified images are disabled. Other-model images can be inspected offline; their writers are not enabled. Automatic resume, rollback and damaged-firmware recovery are unavailable.
+**Status: preview, with broader support inferred from firmware and Windows-backend analysis.** This project has demonstrated MEG 342C FW046 reinstalls over USB-C. Additional model profiles and version transitions have been verified offline, not flashed by this project. Downgrades, modified images, automatic resume, rollback and damaged-firmware recovery remain unavailable.
 
 ## Compatibility
 
 - macOS 14 or later; compatibility with every Mac and macOS release is not guaranteed.
-- One directly connected MEG 342C QD-OLED controller (`1462:3FA4`) with the supported HID descriptor.
-- Scaler identity `A500` and the `C8 40 19` / 32 MiB flash profile.
-- Exact official MEG342C releases 033, 035, 040, 041, 044 and 046, with independent installed-version and metadata validation. See [image identities and support scope](docs/msi/support-expansion.md).
+- One directly connected MSI Gaming Controller (`1462:3FA4`) with one of the two reviewed HID descriptors and a recognized model response.
+- Returned scaler identity `A500` or `A300`, with reviewed `C8 40 17/18/19` or `EF 40 17/18/19` SPI flash: 8, 16 or 32 MiB. Unknown hardware is refused before programming.
+- Exact catalog images, matching model, hardware branch and required panel, with independently recognized installed metadata and boot code. See [every model and its support limits](docs/msi/support-expansion.md). A model with one reviewed release may only reinstall it; unknown factory releases are refused.
 
-The updater rejects unsupported images, hardware and installed layouts before programming. Obtain firmware separately from [MSI's support page](https://www.msi.com/Monitor/MEG-342C-QD-OLED/support#firmware). Proprietary firmware and MSI software are not distributed in this repository.
+The updater rejects unsupported images, hardware and installed layouts before programming. Obtain firmware separately from [MSI's support page](https://www.msi.com/support). Proprietary firmware and MSI software are not distributed in this repository.
 
 ## Use
 
-Connect the monitor directly with a reliable USB-C data/video cable. Release any virtual-machine USB passthrough and close other monitor-control applications. Select the official firmware and an existing private backup folder, then start the update.
+Connect the monitor directly with a reliable USB data cable. USB-C flashing was demonstrated on the MEG 342C; internal UART versus I2C is a separate property of the model, not the external cable type. Release any virtual-machine USB passthrough and close other monitor-control applications. Select the official firmware and an existing private backup folder, then start the update.
 
 Keep the Mac and monitor powered and connected throughout the operation. The display will go blank and USB will reconnect during the final restart. Completion requires firmware verification and restoration of the monitor's calibration and serial data.
 

@@ -1,6 +1,6 @@
 # Programming sequence
 
-This reference describes the supported A500 / 32 MiB / FW046 transaction. It is not a set of independent commands to send manually. Staging packets rely on surrounding register and bank state for their destination.
+This reference describes the tested MEG A500 / 32 MiB / FW046 transaction and the recovered additional profiles. [Support expansion](support-expansion.md) gives exact model and hardware limits. It is not a set of independent commands to send manually. Staging packets rely on surrounding register and bank state for their destination.
 
 ## Preparation and entry
 
@@ -31,10 +31,16 @@ The [boot and metadata plan](../firmware/boot-and-metadata.md) determines image,
 
 ## Protection and finalization
 
-The supported protection sequence changes SPI status `C2/02` to `40/02`, or accepts the already prepared `40/02` state. JEDEC and status checks precede the write-enable/status-write sequence; resulting status is checked before programming. Unknown protection states are rejected.
+The locally observed GigaDevice 32 MiB protection sequence changes SPI status `C2/02` to `40/02`, or accepts the already prepared `40/02` state. Smaller GigaDevice parts write SR1 and SR2 separately; Winbond preserves SR2 while setting QE. These are recovered vendor policies, with busy/state and post-write checks; no other manufacturer/geometry is guessed. JEDEC and status checks precede the write-enable/status-write sequence; resulting status is checked before programming. Unknown protection states are rejected.
 
 After programming and critical readback, A1 exits ISP and resets the monitor. The updater handles the resulting USB removal without requiring a final reset reply. Reacquire the matching monitor, select normal interface 0 and check readiness.
 
 Preservation restoration consists of unlock, calibration write, serial write and relock. Each requires the normal acknowledgement `01 35 36 30 30 2B 0D` followed by zeros. Fresh normal-mode reads must match the expected model/version and preserved data before completion.
 
 Uncertain destructive submissions stop without automatic replay, reset or rollback.
+
+## UART variant
+
+Internal interface 0 uses report 02 and A0 with `#nvtISP_MODE_ON#$$`, without the I2C ASCII entry/prologue. It skips only the I2C pre-ID block, then runs the shared A500/A300 initialization. Configuration 32 sends no response request; AD 99 instead requires its inner 66/XOR reply. UART returns outer bridge status 00, as corroborated by official controller 5.6 code.
+
+Each planned4KiB UART data/metadata operation has an explicit B2 sector erase before eight512-byte programs. Each page requires its B8 complement/XOR and B5sum. Marker invalidation still programs zeros without erase. An uncertain erase or page program is never replayed. A1 UART exit carries `#nvtISP_MODE_OFF#` plus6A82; the bridge may remain attached, so the caller waits30seconds then verifies fresh model/version/calibration/serial rather than requiring a new USB service.

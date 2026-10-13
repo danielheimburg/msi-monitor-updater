@@ -1,6 +1,6 @@
 # Boot selection and metadata
 
-The supported 32 MiB flash contains two 16 MiB halves at `00000000` and `01000000`. A2 selects the volatile 24-bit address window. Physical flash addressing and firmware selection are separate operations.
+The locally tested 32 MiB flash contains two 16 MiB halves at `00000000` and `01000000`. A2 selects the volatile 24-bit address window. Physical flash addressing and firmware selection are separate operations.
 
 Both 5,120-byte known boot-code copies must match the supported loader with SHA-256:
 
@@ -34,3 +34,9 @@ Metadata copies image `6000..6FFF`, adds the destination base to the addresses i
 Destination markers are invalidated before image programming. Every block passes completion and checksum checks before advancement. New metadata is written before clearing the previous marker.
 
 Upper selection can begin during the lower-bank `7000` metadata write. Lower selection begins when the old lower `7FFF` marker is cleared. Activation is not guaranteed atomic. An interrupted transaction cannot be resumed by blindly repeating the normal update sequence.
+
+## Capacity-derived additional layouts
+
+For 8 MiB and 16 MiB flash, the image slot base is 4 MiB and 8 MiB respectively. Both directions skip image `0000..7FFF`; there is one base metadata pair and no 16 MiB high-bank mirror. For 32 MiB, the recovered upper path also writes the first six image blocks and mirrors `7000` metadata. The app derives physical addresses from the verified capacity rather than reusing the MEG bank size.
+
+Additional loaders are pinned through `5FFF` because reachable code extends beyond `1400`. Zero-length table entries are kept at their original indices and relocated exactly as the native nine-record loop does. Active metadata recognition returns all matching reviewed versions, then requires the independently reported installed version. Exact blank or erased-and-marker-cleared inactive sectors can be preserved; arbitrary unknown sectors or ambiguous active markers cannot.

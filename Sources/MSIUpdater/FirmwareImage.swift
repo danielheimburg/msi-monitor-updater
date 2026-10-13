@@ -15,7 +15,7 @@ struct FirmwareImage: Sendable {
     static let reviewedLoaderDigest = "e03120960d3ade1934a6b50b6361d5a0907e201bf9f339478c8d4fc710bc2b22"
 
     enum Backend: String, Sendable {
-        case novatek = "Novatek / Nuvoton I2C"
+        case novatek = "Novatek / Nuvoton"
         case realtek = "Realtek I2C"
         case mediaTek = "MediaTek"
     }
@@ -24,7 +24,13 @@ struct FirmwareImage: Sendable {
         let modelName: String
         let modelCode: UInt8?
         let backend: Backend
-        var isFlashSupported: Bool { modelCode == 0x90 && backend == .novatek }
+        var isFlashSupported: Bool { backend == .novatek && loaderDigest != nil }
+        var loaderDigest: String? { reviewedLoaderDigest ?? (modelCode == 0x90 ? FirmwareImage.reviewedLoaderDigest : nil) }
+        var bootCodeLength: Int { modelCode == 0x90 ? 0x1400 : 0x6000 }
+        let reviewedLoaderDigest: String?
+        let requiredPanel: String?
+        let sameBranchRequired: Bool
+        let interface: UInt8
 
         let version: String
         let imageDigest: String
@@ -35,7 +41,8 @@ struct FirmwareImage: Sendable {
 
         init(version: String, imageDigest: String, imageLength: Int, modelMarkerOffset: Int?,
              activeMetadataDigest: String? = nil, clearedMetadataDigest: String? = nil,
-             modelName: String = "MEG 342C QD-OLED", modelCode: UInt8? = 0x90, backend: Backend = .novatek) {
+             modelName: String = "MEG 342C QD-OLED", modelCode: UInt8? = 0x90, backend: Backend = .novatek, loaderDigest: String? = nil,
+             requiredPanel: String? = nil, sameBranchRequired: Bool = true, interface: UInt8 = 1) {
             self.version = version
             self.imageDigest = imageDigest
             self.imageLength = imageLength
@@ -45,12 +52,16 @@ struct FirmwareImage: Sendable {
             self.modelName = modelName
             self.modelCode = modelCode
             self.backend = backend
+            self.reviewedLoaderDigest = loaderDigest
+            self.requiredPanel = requiredPanel
+            self.sameBranchRequired = sameBranchRequired
+            self.interface = interface
         }
     }
 
     // Metadata hashes cover all 4KiB with descriptor addresses normalized to bank0.
     // Cleared metadata has its entire last 512-byte marker page zeroed.
-    static let reviewedProfiles: [ReviewedProfile] = [
+    static let megProfiles: [ReviewedProfile] = [
         ReviewedProfile(
             version: "033",
             imageDigest: "4cceb247b768578e983531f5127234be6a9c9886fd91291b778898097de68d9d",
@@ -89,8 +100,9 @@ struct FirmwareImage: Sendable {
             clearedMetadataDigest: "af1b9127b40c661bfaf9aa8d50aeee2c42c830b3d88d5818acab5646ddb825c6")
     ]
 
-    // Other-model artifacts are inspection-only. A shared USB ID or table
-    // format never enables the MEG342C programming lifecycle for another model.
+    // Each writer needs a reviewed image and loader contract. Other backends
+    // remain inspection-only even when their USB identity is shared.
+    static let reviewedProfiles = megProfiles + additionalProfiles
     static let inspectionProfiles: [ReviewedProfile] = reviewedProfiles + [
         ReviewedProfile(
             version: "033", imageDigest: "7ece5d07e3b8b0f528c7d5fbae2566162d5f4924ba5df18aeab0c278468ebe14",
@@ -101,29 +113,17 @@ struct FirmwareImage: Sendable {
             imageLength: 2057236, modelMarkerOffset: nil,
             modelName: "MAG 273QP QD-OLED X24", modelCode: nil, backend: .mediaTek),
         ReviewedProfile(
-            version: "041", imageDigest: "69b75a1b67652a0fcfb20bda8de958a203784d70111a76740380b29fc7ebda59",
-            imageLength: 2509824, modelMarkerOffset: 0x2547d8,
-            modelName: "MAG 341CQP QD-OLED", modelCode: 0x99, backend: .novatek),
+            version: "109", imageDigest: "1666f53a5b435d6bd233ce3f750cf32128880fe60e585592429651042ace1506",
+            imageLength: 3670016, modelMarkerOffset: nil,
+            modelName: "MPG 271QRX QD-OLED", modelCode: 0x9E, backend: .realtek),
         ReviewedProfile(
             version: "111", imageDigest: "e4403967d6b86440ade61dd7942edf8a42f00bb2c511d72da35a6ef4183f919a",
             imageLength: 3670016, modelMarkerOffset: nil,
             modelName: "MPG 271QRX QD-OLED", modelCode: 0x9E, backend: .realtek),
         ReviewedProfile(
-            version: "021", imageDigest: "4934abd71dff21492dda3b2dd630f3539ba1d6639de88f2f3684fd03d59f019e",
-            imageLength: 2820096, modelMarkerOffset: 0x2a0240,
-            modelName: "MPG 321URX QD-OLED", modelCode: 0x9F, backend: .novatek),
-        ReviewedProfile(
             version: "024", imageDigest: "d02b5abb341079d3e726a13e8b8ccf6cb2c39be46e1443c1d0e0a436ee9c1345",
             imageLength: 3670016, modelMarkerOffset: nil,
-            modelName: "MPG 322URX QD-OLED", modelCode: 0xAE, backend: .realtek),
-        ReviewedProfile(
-            version: "037", imageDigest: "ec645d2a3e064857bd9ea400d38a550a268ea578c25c184361b7fbef9bfec59a",
-            imageLength: 2531840, modelMarkerOffset: 0x259988,
-            modelName: "MPG 341CQPX QD-OLED", modelCode: 0xA5, backend: .novatek),
-        ReviewedProfile(
-            version: "030", imageDigest: "b605169a11bcec7377baafb01ab7bec0c072fddc20382b9788271c7153423fb2",
-            imageLength: 2523648, modelMarkerOffset: 0x257e78,
-            modelName: "MPG 491CQP QD-OLED", modelCode: 0x9B, backend: .novatek)
+            modelName: "MPG 322URX QD-OLED", modelCode: 0xAE, backend: .realtek)
     ]
 
     struct Partition: Sendable {
@@ -173,25 +173,26 @@ struct FirmwareImage: Sendable {
 
     /// Recognizes installed tables independently of the chosen destination file.
     /// Unknown markers, relocation underflow and malformed ranges are rejected.
-    static func metadataVersion(sector: [UInt8], imageBase: Int) -> String? {
+    static func metadataVersions(sector: [UInt8], imageBase: Int, modelCode: UInt8 = 0x90,
+                                bankSize: Int = Self.bankSize) -> Set<String> {
         guard sector.count == blockSize, imageBase == 0 || imageBase == bankSize,
-              sector.last == 0 || sector.last == 0xAA else { return nil }
+              sector.last == 0 || sector.last == 0xAA else { return [] }
         var normalized = sector
         for index in 0..<9 {
             let position = index * 8
             let address = sector[position..<position + 4].reduce(0) { ($0 << 8) | Int($1) }
-            guard address >= imageBase else { return nil }
+            guard address >= imageBase else { return [] }
             let offset = address - imageBase
-            guard offset < bankSize else { return nil }
+            guard offset < bankSize else { return [] }
             for byte in 0..<4 {
                 normalized[position + byte] = UInt8(truncatingIfNeeded: offset >> (24 - byte * 8))
             }
         }
-        guard (try? parsePartitions(normalized, imageLength: bankSize)) != nil else { return nil }
+        guard (try? parsePartitions(normalized, imageLength: bankSize)) != nil else { return [] }
         let digest = SHA256.hash(data: Data(normalized)).map { String(format: "%02x", $0) }.joined()
-        return reviewedProfiles.first {
-            digest == (sector.last == 0xAA ? $0.activeMetadataDigest : $0.clearedMetadataDigest)
-        }?.version
+        return Set(reviewedProfiles.filter {
+            $0.modelCode == modelCode && digest == (sector.last == 0xAA ? $0.activeMetadataDigest : $0.clearedMetadataDigest)
+        }.map(\.version))
     }
 
     private static func parsePartitions(_ metadata: [UInt8], imageLength: Int) throws -> [Partition] {
@@ -200,6 +201,7 @@ struct FirmwareImage: Sendable {
             let position = index * 8
             let offset = metadata[position..<position + 4].reduce(0) { ($0 << 8) | Int($1) }
             let length = metadata[position + 4..<position + 8].reduce(0) { ($0 << 8) | Int($1) }
+            if offset == 0 && length == 0 { continue }
             guard length > 0, offset >= 0x8000, offset <= imageLength,
                   length <= imageLength - offset else {
                 throw UpdaterError("Firmware partition \(index + 1) is outside the image.")
@@ -212,17 +214,34 @@ struct FirmwareImage: Sendable {
                 throw UpdaterError("Firmware partitions overlap.")
             }
         }
+        guard !partitions.isEmpty else { throw UpdaterError("Firmware has no populated partitions.") }
         return partitions
     }
 
     /// Version policy is checked by both the GUI and writer before ISP entry.
     /// An accepted profile does not constitute hardware validation of a transition.
+    func requireCompatible(with information: MonitorInformation) throws {
+        guard information.model == profile.modelCode else {
+            throw UpdaterError("The selected firmware belongs to a different monitor model.")
+        }
+        guard profile.requiredPanel == nil || information.panel == profile.requiredPanel else {
+            throw UpdaterError("The monitor panel does not match this firmware branch.")
+        }
+        try requireUpdateAllowed(installedVersion: information.version)
+    }
+
     func requireUpdateAllowed(installedVersion: String) throws {
         guard profile.isFlashSupported else {
             throw UpdaterError("This model has offline image inspection only; flashing is unsupported.")
         }
-        guard Self.reviewedProfiles.contains(where: { $0.version == installedVersion }) else {
+        guard Self.reviewedProfiles.contains(where: {
+            $0.modelCode == profile.modelCode && $0.version == installedVersion
+                && $0.loaderDigest == profile.loaderDigest
+        }) else {
             throw UpdaterError("The installed firmware version has no reviewed metadata profile.")
+        }
+        guard !profile.sameBranchRequired || installedVersion.first == version.first else {
+            throw UpdaterError("Firmware branches target different hardware and cannot be crossed.")
         }
         guard installedVersion <= version else {
             throw UpdaterError("Downgrades are not hardware-validated and remain disabled.")
@@ -237,15 +256,19 @@ struct FirmwareImage: Sendable {
         return Array(bytes[offset..<end]) + Array(repeating: 0xFF, count: Self.blockSize - (end - offset))
     }
 
-    func metadata(imageBase: Int) throws -> [UInt8] {
-        guard profile.isFlashSupported, imageBase == 0 || imageBase == Self.bankSize else {
+    func metadata(imageBase: Int, bankSize: Int = Self.bankSize) throws -> [UInt8] {
+        guard profile.isFlashSupported, imageBase == 0 || imageBase == bankSize else {
             throw UpdaterError("Unsupported firmware destination bank.")
         }
         var result = Array(bytes[0x6000..<0x7000])
-        for (index, partition) in partitions.enumerated() {
-            let address = UInt32(partition.offset + imageBase)
+        // The native A500/A300 path relocates all nine records, including empty
+        // zero-length slots. Keep their table positions rather than compacting.
+        for index in 0..<9 {
+            let position = index * 8
+            let offset = bytes[(0x6000 + position)..<(0x6004 + position)].reduce(0) { ($0 << 8) | Int($1) }
+            let address = UInt32(offset + imageBase)
             for byte in 0..<4 {
-                result[index * 8 + byte] = UInt8(truncatingIfNeeded: address >> (24 - byte * 8))
+                result[position + byte] = UInt8(truncatingIfNeeded: address >> (24 - byte * 8))
             }
         }
         result[4095] = 0xAA
