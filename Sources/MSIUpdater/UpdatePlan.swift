@@ -1,7 +1,7 @@
 import CryptoKit
 import Foundation
 
-/// Offline plan for the reviewed A500 / GD25Q256D 32MiB / FW046 profile.
+/// Offline plan for the reviewed A500 / GD25Q256D 32MiB / reviewed MEG342C profiles.
 /// The caller must establish that hardware profile and acquire these physical
 /// ranges freshly and consistently. A plan neither authorizes nor performs I/O.
 /// It is journal-encodable, but cannot be decoded into an executable plan: derive
@@ -49,19 +49,22 @@ struct UpdatePlan: Encodable, Sendable {
     }
 
     let imageSHA256: String
+    let installedVersion: String
+    let targetVersion: String
     let selectedBank: Int
     let destinationBank: Int
     let verifiedRegions: [VerifiedRegion]
+    let expectedFinalRegions: [VerifiedRegion]
     let metadataBytes: [UInt8]
     let operations: [Operation]
 
     /// Keys are absolute physical byte addresses, never EAR-relative offsets.
     /// Requires exactly four complete 4KiB sectors and two 5120-byte boot copies.
-    init(image: FirmwareImage,
+    init(image: FirmwareImage, installedVersion: String,
          metadataSectors: [Int: [UInt8]],
          bootCodeCopies: [Int: [UInt8]]) throws {
-        guard image.sha256 == FirmwareImage.reviewedDigest,
-              image.bytes.count == FirmwareImage.reviewedLength,
+        guard image.profile.isFlashSupported,
+              FirmwareImage.reviewedProfiles.contains(where: { $0.version == installedVersion }),
               Set(metadataSectors.keys) == Set(Self.metadataAddresses),
               Set(bootCodeCopies.keys) == Set(Self.bootCodeAddresses) else {
             throw UpdaterError("Planning requires the reviewed image and every physical metadata/boot range.")
@@ -70,7 +73,8 @@ struct UpdatePlan: Encodable, Sendable {
         var verifiedRegions: [VerifiedRegion] = []
         for address in Self.bootCodeAddresses {
             guard let bytes = bootCodeCopies[address],
-                  bytes == Array(image.bytes.prefix(Self.bootCodeLength)) else {
+                  bytes.count == Self.bootCodeLength,
+                  Self.digest(bytes) == FirmwareImage.reviewedLoaderDigest else {
                 throw UpdaterError("A physical boot-code copy differs from the reviewed loader.")
             }
             verifiedRegions.append(Self.region(address, bytes))
@@ -88,43 +92,42 @@ struct UpdatePlan: Encodable, Sendable {
               let upper7000 = metadataSectors[0x1007000] else {
             throw UpdaterError("Physical metadata ranges are missing.")
         }
-        let lowerMetadata = try image.metadata(imageBase: 0)
-        let upperMetadata = try image.metadata(imageBase: FirmwareImage.bankSize)
-        let clearedLower = Self.clearedMarkerPage(lowerMetadata)
-        let clearedUpper = Self.clearedMarkerPage(upperMetadata)
         let erasedThenCleared = Array(repeating: UInt8(0xFF), count: 3584)
             + Array(repeating: UInt8(0), count: 512)
+        func reviewedSector(_ sector: [UInt8], base: Int, marker: UInt8) -> Bool {
+            sector.last == marker && FirmwareImage.metadataVersion(sector: sector, imageBase: base) != nil
+        }
+        // This one exact inactive predecessor was preserved in the original
+        // FW046 device state. It never establishes an active installed version.
+        let recordedOldLowerDigest = "5724ec5882a7a350fed80cb3077c7093dc4248c3f3538ca7e2b4e9c18df35c9f"
+        let knownInactiveLower = reviewedSector(lower6000, base: 0, marker: 0)
+            || (installedVersion == "046" && Self.digest(lower6000) == recordedOldLowerDigest)
+        let knownInactiveUpper = upper6000 == erasedThenCleared
+            || reviewedSector(upper6000, base: 0, marker: 0)
 
         let selectedBank: Int
         if lower6000.last == 0, lower7000.last == 0xAA {
-            // The observed upper-image state, or the completed lower→upper
-            // successor. Active descriptors must match in both banks in full.
-            let recordedOldLowerDigest = "5724ec5882a7a350fed80cb3077c7093dc4248c3f3538ca7e2b4e9c18df35c9f"
-            let knownInactiveLower = lower6000 == clearedLower
-                || Self.digest(lower6000) == recordedOldLowerDigest
-            guard lower7000 == upperMetadata, upper7000 == upperMetadata,
-                  knownInactiveLower,
-                  upper6000 == erasedThenCleared || upper6000 == clearedLower else {
-                throw UpdaterError("Upper-image metadata or inactive-bank contents differ from the reviewed states.")
+            guard FirmwareImage.metadataVersion(sector: lower7000, imageBase: FirmwareImage.bankSize) == installedVersion,
+                  upper7000 == lower7000, knownInactiveLower, knownInactiveUpper else {
+                throw UpdaterError("Upper-image metadata disagrees with the installed version or an inactive sector is unknown.")
             }
             selectedBank = 1
         } else if lower6000.last == 0xAA, lower7000.last == 0 {
-            guard lower6000 == lowerMetadata, lower7000 == clearedUpper else {
-                throw UpdaterError("Lower-image descriptors or its cleared predecessor differ from FW046.")
+            guard FirmwareImage.metadataVersion(sector: lower6000, imageBase: 0) == installedVersion,
+                  reviewedSector(lower7000, base: FirmwareImage.bankSize, marker: 0) else {
+                throw UpdaterError("Lower-image metadata disagrees with the installed version or its predecessor is unknown.")
             }
-            // The vendor's upper→lower update changes only bank0 metadata.
-            // The retained upper table is expected in that specific successor,
-            // not evidence that the two banks may disagree arbitrarily.
-            let expectedAsymmetricState = upper7000 == upperMetadata
-                && (upper6000 == erasedThenCleared || upper6000 == clearedLower)
-            let mirroredLowerState = upper6000 == lowerMetadata && upper7000 == clearedUpper
+            // Upper→lower writes leave the previous upper table untouched.
+            // It must still be an exact reviewed sector, not a target-derived one.
+            let expectedAsymmetricState = reviewedSector(upper7000, base: FirmwareImage.bankSize, marker: 0xAA)
+                && lower7000 == Self.clearedMarkerPage(upper7000) && knownInactiveUpper
+            let mirroredLowerState = upper6000 == lower6000 && upper7000 == lower7000
             guard expectedAsymmetricState || mirroredLowerState else {
-                throw UpdaterError("The second bank is neither the reviewed retained upper image nor a matching lower mirror.")
+                throw UpdaterError("The second bank is neither a reviewed retained upper image nor a matching lower mirror.")
             }
             selectedBank = 0
         } else {
             // Boot prefers7FFF, while the vendor erase selector prefers6FFF.
-            // Both-AA and neither-AA therefore cannot be normal retry states.
             throw UpdaterError("Ambiguous firmware markers; stop instead of retrying an update.")
         }
 
@@ -139,16 +142,10 @@ struct UpdatePlan: Encodable, Sendable {
                 address: bank * FirmwareImage.bankSize + metadataOffset + 0xE00))
         }
 
-        var dataBlockCount = 0
         for offset in stride(from: 0, to: image.paddedLength, by: FirmwareImage.blockSize) {
             let skip = destinationBank == 0 ? offset < 0x8000 : (0x6000..<0x8000).contains(offset)
             if skip { continue }
             operations.append(.programImageBlock(sourceOffset: offset, address: destinationBase + offset))
-            dataBlockCount += 1
-        }
-        guard dataBlockCount == (destinationBank == 0 ? 605 : 611),
-              image.paddedLength == 0x265000 else {
-            throw UpdaterError("The firmware block layout differs from the reviewed plan.")
         }
 
         // With this loader, upper selection may begin during the bank0 metadata
@@ -162,16 +159,65 @@ struct UpdatePlan: Encodable, Sendable {
             operations.append(.invalidatePreviousMarker(
                 address: bank * FirmwareImage.bankSize + previousMetadataOffset + 0xE00))
         }
-        guard operations.allSatisfy({ $0.address >= 0 && $0.address + $0.length <= 0x2000000 }) else {
+        guard image.paddedLength <= FirmwareImage.bankSize,
+              operations.allSatisfy({ $0.address >= 0 && $0.address + $0.length <= 0x2000000 }) else {
             throw UpdaterError("The update plan exceeds the verified physical flash capacity.")
         }
 
+        // Apply only the planned metadata mutations to the saved source sectors.
+        // Untouched predecessor tables must remain byte-identical after the update.
+        let metadataBytes = try image.metadata(imageBase: destinationBase)
+        var finalMetadata = metadataSectors
+        for operation in operations {
+            switch operation {
+            case .programMetadata(let address):
+                finalMetadata[address] = metadataBytes
+            case .invalidateDestinationMarker(let address), .invalidatePreviousMarker(let address):
+                let sectorAddress = address - 0xE00
+                guard let sector = finalMetadata[sectorAddress] else {
+                    throw UpdaterError("A marker operation has no preserved metadata sector.")
+                }
+                finalMetadata[sectorAddress] = Self.clearedMarkerPage(sector)
+            case .programImageBlock: break
+            }
+        }
         self.imageSHA256 = image.sha256
+        self.installedVersion = installedVersion
+        self.targetVersion = image.version
+        var expectedFinalRegions: [VerifiedRegion] = []
+        for address in Self.metadataAddresses {
+            guard let bytes = finalMetadata[address] else {
+                throw UpdaterError("Final metadata expectation is incomplete.")
+            }
+            expectedFinalRegions.append(Self.region(address, bytes))
+        }
+        for address in Self.bootCodeAddresses {
+            guard let bytes = bootCodeCopies[address] else {
+                throw UpdaterError("Final loader expectation is incomplete.")
+            }
+            expectedFinalRegions.append(Self.region(address, bytes))
+        }
+        self.expectedFinalRegions = expectedFinalRegions
         self.selectedBank = selectedBank
         self.destinationBank = destinationBank
         self.verifiedRegions = verifiedRegions
-        self.metadataBytes = try image.metadata(imageBase: destinationBase)
+        self.metadataBytes = metadataBytes
         self.operations = operations
+    }
+
+    /// Exact postconditions derived before mutation, independent of a future plan.
+    func verifyFinalLayout(metadataSectors: [Int: [UInt8]], bootCodeCopies: [Int: [UInt8]]) throws {
+        guard Set(metadataSectors.keys) == Set(Self.metadataAddresses),
+              Set(bootCodeCopies.keys) == Set(Self.bootCodeAddresses) else {
+            throw UpdaterError("Final firmware ranges are incomplete.")
+        }
+        let ranges = metadataSectors.merging(bootCodeCopies) { first, _ in first }
+        for expected in expectedFinalRegions {
+            guard let bytes = ranges[expected.address], bytes.count == expected.length,
+                  Self.digest(bytes) == expected.sha256 else {
+                throw UpdaterError(String(format: "Final firmware bytes differ at physical %08X.", expected.address))
+            }
+        }
     }
 
     private static func clearedMarkerPage(_ sector: [UInt8]) -> [UInt8] {

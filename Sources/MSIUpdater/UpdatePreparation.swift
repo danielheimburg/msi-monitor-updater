@@ -9,6 +9,9 @@ struct UpdatePreparation: Encodable, Sendable {
     let recordDirectory: URL
 
     static func run(image: FirmwareImage, device: MonitorDevice, parent: URL) async throws -> Self {
+        guard image.profile.isFlashSupported else {
+            throw UpdaterError("This model has offline image inspection only; no device access is supported.")
+        }
         let activity = ProcessInfo.processInfo.beginActivity(
             options: [.idleSystemSleepDisabled, .idleDisplaySleepDisabled, .suddenTerminationDisabled],
             reason: "Read and preserve MSI firmware metadata")
@@ -26,6 +29,9 @@ struct UpdatePreparation: Encodable, Sendable {
             try record.preserve("monitor.json", data: encoder.encode(information))
             try record.preserve("calibration.bin", data: Data(information.calibration))
             try record.preserve("serial.bin", data: Data(information.serial))
+            guard FirmwareImage.reviewedProfiles.contains(where: { $0.version == information.version }) else {
+                throw UpdaterError("The installed firmware version has no reviewed metadata profile.")
+            }
             try record.append("entering-diagnostic-isp", durable: true)
             // An uncertain entry still requires diagnostic cleanup. This path
             // never submitted a destructive command, so A1 is appropriate here.
@@ -36,7 +42,7 @@ struct UpdatePreparation: Encodable, Sendable {
             guard try await isp.readJEDEC() == [0xC8, 0x40, 0x19] else {
                 throw UpdaterError("Flash identity differs from the reviewed 32MiB device.")
             }
-            let plan = try await acquirePlan(image: image, isp: isp, record: record)
+            let plan = try await acquirePlan(image: image, installedVersion: information.version, isp: isp, record: record)
             try record.append("diagnostic-reads-verified", durable: true)
             let reacquired = try await resetAndReacquire(session, previous: device)
             entered = false
@@ -86,7 +92,7 @@ struct UpdatePreparation: Encodable, Sendable {
         }.value
     }
 
-    static func acquirePlan(image: FirmwareImage, isp: ScalerISP, record: UpdateRecord,
+    static func acquirePlan(image: FirmwareImage, installedVersion: String, isp: ScalerISP, record: UpdateRecord,
                             progress: @Sendable (String) async -> Void = { _ in }) async throws -> UpdatePlan {
         let originalBank = try await isp.readStatus(.extendedAddress)
         guard originalBank <= 1 else { throw UpdaterError("Unexpected flash address-bank state.") }
@@ -103,7 +109,7 @@ struct UpdatePreparation: Encodable, Sendable {
         guard try await isp.readStatus(.extendedAddress) == originalBank else {
             throw UpdaterError("Flash address bank changed during preservation.")
         }
-        let plan = try UpdatePlan(image: image, metadataSectors: metadata, bootCodeCopies: loaders)
+        let plan = try UpdatePlan(image: image, installedVersion: installedVersion, metadataSectors: metadata, bootCodeCopies: loaders)
         try record.preserve("plan.json", data: JSONEncoder().encode(plan))
         return plan
     }

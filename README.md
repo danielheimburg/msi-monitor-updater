@@ -2,20 +2,16 @@
 
 <img src="Resources/AppIcon.png" width="80" height="80" alt="MSI Firmware Updater icon">
 
-A native macOS utility for installing the supported official **FW046** firmware on the **MSI MEG 342C QD-OLED**. Built with Swift and SwiftUI, with no third-party package dependencies. This is an independent utility and is not developed or endorsed by MSI.
+A native macOS utility for installing reviewed official firmware releases on the **MSI MEG 342C QD-OLED**. Built with Swift and SwiftUI, with no third-party package dependencies. This is an independent utility and is not developed or endorsed by MSI.
 
-**Status: preview.** The supported operation is FW046 reinstallation from recognized firmware layouts. Other firmware versions, upgrades, downgrades, modified images and other monitor models are unsupported. Automatic resume, rollback and damaged-firmware recovery are unavailable.
+**Status: preview, with multi-version support verified offline.** The previous build demonstrated FW046 reinstallation. The new code recognizes releases 033, 035, 040, 041, 044 and 046; actual version transitions remain untested. Downgrades and modified images are disabled. Other-model images can be inspected offline; their writers are not enabled. Automatic resume, rollback and damaged-firmware recovery are unavailable.
 
 ## Compatibility
 
 - macOS 14 or later; compatibility with every Mac and macOS release is not guaranteed.
 - One directly connected MEG 342C QD-OLED controller (`1462:3FA4`) with the supported HID descriptor.
 - Scaler identity `A500` and the `C8 40 19` / 32 MiB flash profile.
-- Official FW046 image, 2,507,776 bytes, with SHA-256:
-
-```text
-03db338acefd86cd41aa05539a69d8fff5708423e4896912f677cebb81ac7c8a
-```
+- Exact official MEG342C releases 033, 035, 040, 041, 044 and 046, with independent installed-version and metadata validation. See [image identities and support scope](docs/msi/support-expansion.md).
 
 The updater rejects unsupported images, hardware and installed layouts before programming. Obtain firmware separately from [MSI's support page](https://www.msi.com/Monitor/MEG-342C-QD-OLED/support#firmware). Proprietary firmware and MSI software are not distributed in this repository.
 

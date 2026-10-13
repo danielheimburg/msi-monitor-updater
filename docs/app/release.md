@@ -1,6 +1,6 @@
 # Packaging and distribution
 
-The application is a preview with a restricted hardware and image profile. Developer ID signing, notarization and compatibility with every Mac or macOS release are not implied by a local build.
+The application is a preview with a restricted hardware profile and reviewed image catalog. Version0.3.0 passes offline inspection/planning, release build and local signature checks; it has not accessed or flashed the monitor. The previous FW046 build supplies the existing hardware evidence. Developer ID signing, notarization and compatibility with every Mac or macOS release are not implied by a local build.
 
 ## Build an app bundle
 

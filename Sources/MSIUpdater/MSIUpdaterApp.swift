@@ -6,43 +6,110 @@ import UniformTypeIdentifiers
 enum MSIUpdaterMain {
     @MainActor static func main() async {
         let arguments = Array(CommandLine.arguments.dropFirst())
-        if arguments == ["--inspect-monitor"] || (arguments.count == 3 && ["--prepare", "--update-fw046"].contains(arguments[0])) {
-            do {
+        if arguments.isEmpty {
+            MSIUpdaterApp.main()
+            return
+        }
+        let imageInspection = arguments.count == 2 && arguments[0] == "--inspect-image"
+        let planInspection = arguments.count == 3 && arguments[0] == "--plan"
+        let imageOperation = arguments.count == 3
+            && ["--prepare", "--update", "--update-fw046"].contains(arguments[0])
+        guard imageInspection || planInspection || imageOperation || arguments == ["--inspect-monitor"] else {
+            FileHandle.standardError.write(Data("Usage: MSIUpdater [--inspect-image IMAGE | --inspect-monitor | --plan IMAGE SNAPSHOT_DIRECTORY | --prepare IMAGE RECORD_DIRECTORY | --update IMAGE RECORD_DIRECTORY | --update-fw046 IMAGE RECORD_DIRECTORY]\n".utf8))
+            exit(2)
+        }
+        do {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            let result: Data
+            if imageInspection {
+                let image = try FirmwareImage(url: URL(fileURLWithPath: arguments[1]))
+                let modelCode: Any = image.profile.modelCode.map { String(format: "%02X", $0) } ?? NSNull()
+                let inspection: [String: Any] = [
+                    "version": image.version,
+                    "model": image.profile.modelName,
+                    "modelCode": modelCode,
+                    "sha256": image.sha256,
+                    "byteLength": image.bytes.count,
+                    "paddedByteLength": image.paddedLength,
+                    "flashEligibleModel": image.profile.isFlashSupported,
+                    "backend": image.profile.backend.rawValue,
+                    "partitionTableInspected": image.profile.backend == .novatek,
+                    "hardwareValidation": "Previous build: MEG342C FW046 reinstallation only; this expansion is offline-validated",
+                    "partitions": image.partitions.map { ["offset": $0.offset, "length": $0.length] }
+                ]
+                result = try JSONSerialization.data(withJSONObject: inspection, options: [.prettyPrinted, .sortedKeys])
+            } else if planInspection {
+                let image = try FirmwareImage(url: URL(fileURLWithPath: arguments[1]))
+                let snapshot = URL(fileURLWithPath: arguments[2], isDirectory: true)
+                result = try encoder.encode(offlinePlan(image: image, snapshot: snapshot))
+            } else {
+                // Validate the selected bytes and target policy before any USB discovery.
+                let image = imageOperation
+                    ? try FirmwareImage(url: URL(fileURLWithPath: arguments[1])) : nil
+                if let image {
+                    guard image.profile.isFlashSupported else {
+                        throw UpdaterError("This monitor model is available for offline image inspection only.")
+                    }
+                    if arguments[0] == "--update-fw046", image.version != "046" {
+                        throw UpdaterError("--update-fw046 accepts only the reviewed FW046 image. Use --update for another reviewed release.")
+                    }
+                }
                 let devices = try MonitorDevice.discover()
                 guard devices.count == 1, let device = devices.first else {
                     throw UpdaterError("Connect exactly one supported monitor to macOS.")
                 }
-                let encoder = JSONEncoder()
-                encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-                let result: Data
-                if arguments[0] == "--update-fw046" {
-                    let image = try FirmwareImage(url: URL(fileURLWithPath: arguments[1]))
-                    let update = try await FirmwareUpdate.run(image: image, device: device,
-                        parent: URL(fileURLWithPath: arguments[2], isDirectory: true)) { message in
+                if let image {
+                    let parent = URL(fileURLWithPath: arguments[2], isDirectory: true)
+                    if arguments[0] == "--prepare" {
+                        result = try encoder.encode(await UpdatePreparation.run(image: image, device: device, parent: parent))
+                    } else {
+                        let update = try await FirmwareUpdate.run(image: image, device: device, parent: parent) { message in
                             FileHandle.standardError.write(Data((message.message + "\n").utf8))
                         }
-                    result = try encoder.encode(update)
-                } else if arguments[0] == "--prepare" {
-                    let image = try FirmwareImage(url: URL(fileURLWithPath: arguments[1]))
-                    let preparation = try await UpdatePreparation.run(image: image, device: device,
-                        parent: URL(fileURLWithPath: arguments[2], isDirectory: true))
-                    result = try encoder.encode(preparation)
+                        result = try encoder.encode(update)
+                    }
                 } else {
                     result = try encoder.encode(await MonitorProtocol.inspect(device))
                 }
-                print(String(decoding: result, as: UTF8.self))
-            } catch {
-                var message = error.localizedDescription
-                if let failure = error as? FirmwareUpdate.Failure { message += " Record: \(failure.recordDirectory.path)" }
-                FileHandle.standardError.write(Data((message + "\n").utf8))
-                exit(1)
             }
-        } else if CommandLine.arguments.count == 1 {
-            MSIUpdaterApp.main()
-        } else {
-            FileHandle.standardError.write(Data("Usage: MSIUpdater [--inspect-monitor | --prepare IMAGE RECORD_DIRECTORY | --update-fw046 IMAGE RECORD_DIRECTORY]\n".utf8))
-            exit(2)
+            print(String(decoding: result, as: UTF8.self))
+        } catch {
+            var message = error.localizedDescription
+            if let failure = error as? FirmwareUpdate.Failure { message += " Record: \(failure.recordDirectory.path)" }
+            FileHandle.standardError.write(Data((message + "\n").utf8))
+            exit(1)
         }
+    }
+
+    /// An offline snapshot is diagnostic input only. Live updates acquire fresh state.
+    private static func offlinePlan(image: FirmwareImage, snapshot: URL) throws -> UpdatePlan {
+        guard image.profile.isFlashSupported, image.profile.modelCode == 0x90 else {
+            throw UpdaterError("Offline planning supports only reviewed MEG342C targets.")
+        }
+        let information = try JSONDecoder().decode(MonitorInformation.self,
+            from: Data(contentsOf: snapshot.appendingPathComponent("monitor.json")))
+        guard information.model == 0x90 else {
+            throw UpdaterError("The snapshot belongs to a different monitor model.")
+        }
+        func readRange(address: Int, count: Int) throws -> [UInt8] {
+            let url = snapshot.appendingPathComponent(String(format: "physical-%08X.bin", address))
+            let properties = try url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
+            guard properties.isRegularFile == true, properties.fileSize == count else {
+                throw UpdaterError("The snapshot range \(url.lastPathComponent) has an invalid size.")
+            }
+            return Array(try Data(contentsOf: url))
+        }
+        var metadata: [Int: [UInt8]] = [:]
+        for address in UpdatePlan.metadataAddresses {
+            metadata[address] = try readRange(address: address, count: FirmwareImage.blockSize)
+        }
+        var loaders: [Int: [UInt8]] = [:]
+        for address in UpdatePlan.bootCodeAddresses {
+            loaders[address] = try readRange(address: address, count: UpdatePlan.bootCodeLength)
+        }
+        return try UpdatePlan(image: image, installedVersion: information.version,
+            metadataSectors: metadata, bootCodeCopies: loaders)
     }
 }
 
@@ -80,6 +147,16 @@ struct UpdaterView: View {
     @State private var progress: FirmwareUpdate.Progress?
     @State private var showingHelp = false
     @State private var completedRecord: URL?
+
+    private var compatibilityIssue: String? {
+        guard let image else { return nil }
+        guard image.profile.isFlashSupported else { return "This model supports offline inspection only." }
+        guard let information else { return "Read monitor information to check the installed release." }
+        do {
+            try image.requireUpdateAllowed(installedVersion: information.version)
+            return nil
+        } catch { return error.localizedDescription }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -120,26 +197,48 @@ struct UpdaterView: View {
             GroupBox("Firmware") {
                 VStack(alignment: .leading, spacing: 8) {
                     if let image {
-                        Text("Reviewed official firmware: FW\(image.version)")
+                        Text("\(image.profile.modelName) · FW\(image.version)")
                         Text(image.url.lastPathComponent).textSelection(.enabled)
-                        Text("Official image verified · \(image.bytes.count.formatted()) bytes")
+                        Text("Reviewed official image matched · \(image.bytes.count.formatted()) bytes")
                             .font(.caption).foregroundStyle(.secondary)
+                        LabeledContent("Update method", value: image.profile.backend.rawValue)
+                            .font(.caption)
+                        if image.profile.backend == .novatek {
+                            Text("\(image.partitions.count) partitions · bounds and overlap checks passed")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        DisclosureGroup("Image checksum") {
+                            Text(image.sha256).font(.caption.monospaced()).textSelection(.enabled)
+                        }
+                        if let issue = compatibilityIssue {
+                            Text(issue).font(.caption).foregroundStyle(.orange)
+                        } else if let information {
+                            Text("FW\(information.version) → FW\(image.version). Flash identity and installed metadata are checked again before writing.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        if !image.profile.isFlashSupported {
+                            Text("Offline image inspection only. Flashing this model is unsupported.")
+                                .font(.caption).foregroundStyle(.orange)
+                        } else {
+                            Text("The previous build was tested reinstalling FW046. This support expansion has been verified offline only.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
                     } else {
-                        Text("Choose the reviewed MEG342C FW046 image.")
+                        Text("Choose an official firmware image from the reviewed catalog.")
                     }
                     Button("Choose firmware…") { choosingImage = true }.disabled(updating)
                 }.frame(maxWidth: .infinity, alignment: .leading)
             }
 
             if let error { Text(error).foregroundStyle(.red).textSelection(.enabled) }
-            Text("Keep power and USB connected. The display will go blank and restart. Recovery after an interrupted or damaged update is unverified.")
+            Text("Downgrades are disabled. Keep power and USB connected. The display will go blank and restart. Recovery after an interrupted or damaged update is unverified.")
                 .font(.callout).foregroundStyle(.secondary)
             HStack {
                 Button("Choose backup folder…") { chooseRecordsDirectory() }.disabled(updating || inspecting)
                 if let recordsDirectory { Text(recordsDirectory.lastPathComponent).font(.caption) }
                 Spacer()
-                Button("Update to FW046…") { confirmingUpdate = true }
-                    .disabled(updating || inspecting || devices.count != 1 || image == nil || recordsDirectory == nil)
+                Button(image.map { "Update to FW\($0.version)…" } ?? "Update…") { confirmingUpdate = true }
+                    .disabled(updating || inspecting || devices.count != 1 || image?.profile.isFlashSupported != true || information == nil || compatibilityIssue != nil || recordsDirectory == nil)
             }
             if let progress {
                 VStack(alignment: .leading, spacing: 8) {
@@ -173,7 +272,8 @@ struct UpdaterView: View {
         .sheet(isPresented: $showingHelp) {
             VStack(alignment: .leading, spacing: 16) {
                 Text("Before you update").font(.title2).fontWeight(.semibold)
-                Text("Supported: MSI MEG 342C QD-OLED with the reviewed official FW046 image. Other models and modified images are unsupported.")
+                Text("Reviewed official MEG342C firmware releases are accepted. Only FW046 reinstallation has been tested on hardware; other releases have been validated offline. Modified images are unsupported.")
+                Text("Version transitions have not been tested on hardware. Downgrades are disabled. Images from other monitor models may be inspected offline when present in the catalog; flashing those models is unsupported.")
                 Text("Use a reliable USB data cable directly to the Mac. Release Windows VM passthrough and close other monitor-control applications.")
                 Text("Keep the Mac and monitor powered and connected. The display will go blank and reconnect during the final restart. A full progress bar finishes writing; the app still verifies and restores your monitor afterward.")
                 Text("Backup records contain device-specific calibration, serial data and USB traffic. Keep them private. If the update stops, preserve the record and keep the monitor connected; automatic resume and damaged-firmware recovery are unavailable.")
@@ -188,7 +288,7 @@ struct UpdaterView: View {
             .padding(24)
             .frame(width: 520)
         }
-        .alert("Update this monitor to FW046?", isPresented: $confirmingUpdate) {
+        .alert(image.map { "Update this monitor to FW\($0.version)?" } ?? "Update this monitor?", isPresented: $confirmingUpdate) {
             Button("Cancel", role: .cancel) {}
             Button("Update") { Task { await update() } }
         } message: {
@@ -244,7 +344,8 @@ struct UpdaterView: View {
     private func update() async {
         guard !updating, !UpdaterApplicationDelegate.updateInProgress,
               devices.count == 1, let device = devices.first,
-              let image, let recordsDirectory else { return }
+              let image, image.profile.isFlashSupported, information != nil, compatibilityIssue == nil,
+              let recordsDirectory else { return }
         updating = true
         UpdaterApplicationDelegate.updateInProgress = true
         error = nil

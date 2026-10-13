@@ -7,11 +7,11 @@ The executable uses Swift 6, Foundation, CryptoKit, IOKit HID, AppKit and SwiftU
 | Component | Responsibility |
 |---|---|
 | `MonitorDevice` | Discover the supported controller and bind its HID descriptor and USB identity. |
-| `FirmwareImage` | Validate FW046 size, digest, model marker and partitions; generate padded blocks and relocated metadata. |
+| `FirmwareImage` | Validate reviewed catalog identities, applicable partitions and update policy; generate padded blocks and metadata. |
 | `HIDSession` / `HIDChannel` | Own one device and serialize asynchronous output, input, removal and timeout handling. |
 | `MonitorProtocol` | Read normal-mode information and restore calibration and serial data. |
 | `ScalerISP` | Identify the scaler and flash; perform physical reads, bank selection, protection changes, programming and checksums. |
-| `UpdatePlan` | Derive ordered physical operations from freshly read supported boot and metadata bytes. |
+| `UpdatePlan` | Recognize installed metadata independently of the target; derive ordered operations and exact expected final regions. |
 | `UpdateRecord` | Save private backups and durable transaction intent and results. |
 | `UpdatePreparation` | Prepare a plan without programming flash, then restart and check normal communication. |
 | `FirmwareUpdate` | Preserve, plan, program, verify, restart, reacquire and restore. |
@@ -20,6 +20,10 @@ The executable uses Swift 6, Foundation, CryptoKit, IOKit HID, AppKit and SwiftU
 ## Transaction boundaries
 
 Image and device validation precede programming. The plan uses fresh physical bytes; saved records cannot be decoded into executable resume plans. Unknown metadata, ambiguous markers and unsupported hardware are rejected.
+
+The active metadata must match the reported installed release, independently of the selected target. Expected final sectors apply the planned writes to preserved source sectors, retaining untouched predecessor tables. Final verification checks this successor rather than deriving a new plan from target-only assumptions. The shared known loader remains pinned; upper-bank boot-tail writes require exact matching bytes.
+
+Offline image inspection and snapshot planning perform file operations only. Other-model catalogs are inspection-only, and the live writer rejects downgrades before ISP entry.
 
 Only one exchange is outstanding at a time. Output completion and input arrival are independent events and may arrive in either order. A successful output callback means host submission completed; it does not establish a flash commit or a valid response. Framing and command-specific checks gate each dependent operation.
 

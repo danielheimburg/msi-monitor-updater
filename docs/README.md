@@ -1,6 +1,6 @@
 # Documentation
 
-The updater supports the MEG 342C QD-OLED, its recognized installed layouts and the specified official FW046 image. The references below describe the app's behavior, supported protocol and firmware structure.
+The updater supports the MEG 342C QD-OLED, its recognized installed layouts and six exact official firmware releases. The references below describe the app's behavior, supported protocol and firmware structure.
 
 ## App
 
@@ -11,6 +11,7 @@ The updater supports the MEG 342C QD-OLED, its recognized installed layouts and 
 
 ## MSI protocol
 
+- [Support expansion](msi/support-expansion.md): reviewed releases, offline inspection and Windows backend differences.
 - [Device identity](msi/identity.md): monitor, USB controller, bridge, scaler and flash identities.
 - [USB transport](msi/usb-protocol.md): report framing, normal commands and response validation.
 - [Programming sequence](msi/update-sequence.md): entry, staging, commit, checksums and restoration.

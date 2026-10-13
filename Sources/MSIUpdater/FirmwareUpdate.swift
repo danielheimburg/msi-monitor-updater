@@ -35,6 +35,9 @@ struct FirmwareUpdate: Encodable, Sendable {
 
     static func run(image: FirmwareImage, device: MonitorDevice, parent: URL,
                     progress: @escaping @Sendable (Progress) async -> Void) async throws -> Self {
+        guard image.profile.isFlashSupported else {
+            throw UpdaterError("This model has offline image inspection only; no device access is supported.")
+        }
         let activity = ProcessInfo.processInfo.beginActivity(
             options: [.idleSystemSleepDisabled, .idleDisplaySleepDisabled, .suddenTerminationDisabled],
             reason: "Update MSI monitor firmware")
@@ -49,6 +52,7 @@ struct FirmwareUpdate: Encodable, Sendable {
             guard try await MonitorProtocol(session: session).information(identity: device) == information else {
                 throw UpdaterError("Repeated monitor identity or preservation reads disagree.")
             }
+            try image.requireUpdateAllowed(installedVersion: information.version)
             try record.preserve("monitor.json", data: JSONEncoder().encode(information))
             try record.preserve("calibration.bin", data: Data(information.calibration))
             try record.preserve("serial.bin", data: Data(information.serial))
@@ -61,7 +65,7 @@ struct FirmwareUpdate: Encodable, Sendable {
                 throw UpdaterError("Flash identity differs from the reviewed 32MiB device.")
             }
             await progress(.preparing("Preserving boot code and firmware metadata"))
-            let plan = try await UpdatePreparation.acquirePlan(image: image, isp: isp, record: record) { message in await progress(.preparing(message)) }
+            let plan = try await UpdatePreparation.acquirePlan(image: image, installedVersion: information.version, isp: isp, record: record) { message in await progress(.preparing(message)) }
             // The upper branch also overwrites the rest of its first six blocks.
             // Require and preserve the pinned contents across that entire area.
             if plan.destinationBank == 1 {
@@ -124,7 +128,7 @@ struct FirmwareUpdate: Encodable, Sendable {
                 await progress(.programming(completed: index + 1, total: plan.operations.count))
             }
             await progress(.verifying)
-            try await verifyFinalLayout(image: image, plan: plan, isp: isp, record: record)
+            try await verifyFinalLayout(plan: plan, isp: isp, record: record)
             try record.append("all-programming-verified-reset-intent", durable: true)
             await progress(.restarting)
             let returned = try await UpdatePreparation.resetAndReacquire(session, previous: device)
@@ -155,7 +159,7 @@ struct FirmwareUpdate: Encodable, Sendable {
         }
     }
 
-    private static func verifyFinalLayout(image: FirmwareImage, plan: UpdatePlan,
+    private static func verifyFinalLayout(plan: UpdatePlan,
                                           isp: ScalerISP, record: UpdateRecord) async throws {
         var sectors: [Int: [UInt8]] = [:]
         var loaders: [Int: [UInt8]] = [:]
@@ -169,10 +173,7 @@ struct FirmwareUpdate: Encodable, Sendable {
             loaders[address] = bytes
             try record.preserve(String(format: "final-loader-%08X.bin", address), data: Data(bytes))
         }
-        let successor = try UpdatePlan(image: image, metadataSectors: sectors, bootCodeCopies: loaders)
-        guard successor.selectedBank == plan.destinationBank else {
-            throw UpdaterError("Final metadata does not select the programmed firmware bank.")
-        }
+        try plan.verifyFinalLayout(metadataSectors: sectors, bootCodeCopies: loaders)
     }
 
     private static func restoreAndVerify(_ original: MonitorInformation, image: FirmwareImage,

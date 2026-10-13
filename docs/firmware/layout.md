@@ -1,6 +1,8 @@
-# FW046 image layout
+# Reviewed image layouts
 
-The supported official image is 2,507,776 bytes (`0x264400`). Its padded 4 KiB extent is `0x265000`.
+Six exact official MEG342C releases are recognized; [support expansion](../msi/support-expansion.md) lists their identities. All six share the complete boot area, USB/ISP auxiliary payload and nine partition offsets. Their sizes and partition lengths differ. FW046 is the reference below.
+
+The FW046 official image is 2,507,776 bytes (`0x264400`). Its padded 4 KiB extent is `0x265000`.
 
 | Property | Value |
 |---|---|

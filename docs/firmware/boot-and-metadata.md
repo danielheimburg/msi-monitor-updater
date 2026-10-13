@@ -23,9 +23,11 @@ Vendor erase-selection logic prefers `6FFF`, while boot selection prefers `7FFF`
 | Lower | 605 at `00008000..00264FFF`; skip image `0000..7FFF` | Unrelocated table at lower `6000` | Lower `7E00` page | 609 |
 | Upper | 611 at `01000000..01005FFF` and `01008000..01264FFF`; skip image `6000..7FFF` | Relocated table at `7000` in both banks | Both `6E00` pages | 617 |
 
+FW046 is the reference in this table. Releases033/035 use602 lower or608 upper image blocks;040/041 use604/610;044/046 use605/611. Counts derive from padded image length and the same asymmetric skip policy.
+
 The totals include two destination-marker clears. Each clear programs 512 zero bytes and verifies a zero sum. The final image block contains 1,024 image bytes and 3,072 `FF` padding bytes.
 
-Metadata copies image `6000..6FFF`, adds the destination base to the addresses in nine descriptors and sets the last byte to `AA`. Lengths remain unchanged. Planning requires four full physical sectors at `6000`, `7000`, `01006000` and `01007000`, plus both boot copies. Unknown layouts are rejected.
+Metadata copies image `6000..6FFF`, adds the destination base to the addresses in nine descriptors and sets the last byte to `AA`. Lengths remain unchanged. Planning requires four full physical sectors at `6000`, `7000`, `01006000` and `01007000`, plus both boot copies. Unknown layouts are rejected. The normal-mode version must match exact recognized active metadata independently of the target. Expected final sectors are derived by applying ordered marker/table writes to the preserved originals, so untouched predecessor tables remain byte-identical.
 
 ## Ordering
 
