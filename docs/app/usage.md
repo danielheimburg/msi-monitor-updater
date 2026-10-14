@@ -7,14 +7,18 @@ Use a reliable USB-C data/video cable directly between the Mac and monitor. MSI'
 ## GUI
 
 1. Connect exactly one supported controller and refresh discovery.
-2. Read monitor information. The app requires an exact recognized model response and valid preservation-data checksums. The panel is read for every supported model and must match the selected image.
-3. Select firmware for that model and hardware branch. The app derives identity from firmware records and checks size, padding, version consistency, known bootloader and partition bounds; it shows the model, version, firmware family, applicable partition checks, checksum and compatibility status.
-4. Choose an existing private backup folder and confirm the update.
-5. Keep power and USB connected until restart, restoration and final verification finish.
+2. In **Update**, click **Read identity**. The app requires an exact recognized model response and valid preservation-data checksums. Installed and selected model, version and panel appear side by side; the panel must match the image.
+3. Choose an official `.bin` file for that model and hardware branch. **Image details** shows the parsed identity, internal transport, file and padded sizes, all partition offsets and lengths, image SHA-256 and bootloader SHA-256. Size, padding, version consistency, known bootloader and partition checks are required. Cancelling the file chooser preserves the existing selection.
+4. Choose an existing private folder for backups and the update record. Review the source and target, panel, record destination and warnings on the in-window review screen. **Cancel** returns without writing. Same-version updates are explicitly labeled **Reinstall**.
+5. Confirm the write, then follow **Activity** through Preserve, Write, Verify, Restart and Restore. Keep power and USB connected until final verification finishes. Normal quit is blocked while the operation is active.
+
+**Help** explains compatibility, connection/restart behavior and private records/recovery. The window defaults to 940 × 840 points, with an 860 × 800 minimum, and follows macOS appearance. Long warnings and paths wrap. Firmware selection uses the native file chooser restricted to `.bin` files; structural validation still decides admission.
 
 The display goes blank and USB disconnects during the intended final reset. A full programming indicator or device reappearance alone does not establish success. Completion requires reacquiring the matching monitor, restoring its preservation data and checking fresh firmware, calibration and serial responses.
 
-Installed model/version come from repeated normal-mode reads; installed metadata is structurally checked independently of the destination image. Releases do not need catalog entries. The GUI displays downgrade warnings in the firmware panel and confirmation dialog; the CLI prints one before ISP entry. Downgrades and other version transitions remain untested on hardware. If an update stops after a possible mutation, keep the monitor connected and preserve its complete record. Restarting the app or rerunning the command is not a resume procedure. Automatic continuation, rollback and damaged-firmware recovery are unavailable.
+Installed model/version come from repeated normal-mode reads; installed metadata is structurally checked independently of the destination image. Releases do not need catalog entries. The GUI displays downgrade warnings in Update and the review screen; the CLI prints one before ISP entry. Downgrades and other version transitions remain untested on hardware.
+
+On failure, Activity retains the last reported phase, explains the stop and offers **Show update record** when a record was created. A stopped window blocks further device commands and writes, including failures before programming; this conservative UI boundary does not imply that every failure changed firmware. Keep the monitor connected and preserve the complete record. Restarting the app or rerunning the command is not a resume procedure. Automatic continuation, rollback and damaged-firmware recovery are unavailable.
 
 ## Command line
 

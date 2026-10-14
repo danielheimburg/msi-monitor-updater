@@ -15,7 +15,8 @@ The executable uses Swift 6, Foundation, CryptoKit, IOKit HID, AppKit and SwiftU
 | `UpdateRecord` | Save private backups and durable transaction intent and results. |
 | `UpdatePreparation` | Prepare a plan without programming flash, then restart and check normal communication. |
 | `FirmwareUpdate` | Preserve, plan, program, verify, restart, reacquire and restore. |
-| `MSIUpdaterApp` | Present GUI/CLI controls, progress, errors and update ownership. |
+| `MSIUpdaterApp` | Dispatch CLI commands, configure the native window and guard application quit during updates. |
+| `UpdaterView` | Present source/target inspection, image manifest, protected review, lifecycle activity, help and stopped-state records. |
 
 ## Transaction boundaries
 
@@ -40,5 +41,7 @@ The app prevents a second update from its own window and rejects ordinary quit w
 ## Progress and records
 
 Programming progress advances only after an operation's required completion and verification checks. Final readback, restart and preservation restoration remain separate phases. A full programming bar is not overall completion.
+
+The GUI derives its five-stage ledger from `FirmwareUpdate.Progress`; it does not simulate progress or estimate remaining time. Review replaces the ordinary workspace until cancelled or confirmed. The write entry point rechecks readiness and binds the confirmed installed version to the backend's fresh read. Failure retains the last reported phase and blocks another operation in that window; only a returned successful result produces the completion state. The CLI and native transport remain independent of this presentation state.
 
 Failures carry the record directory so the GUI can reveal it directly. Records contain sensitive monitor data and remain local. New record directories use owner-only modes and verified empty macOS ACLs before sensitive children are created; parent permissions are preserved. They are diagnostic records, not rollback images or a full flash backup.
