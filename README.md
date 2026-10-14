@@ -17,9 +17,9 @@ The updater rejects unsupported images, hardware and installed layouts before pr
 
 ## Download
 
-[Download v0.5.0 for Apple Silicon](https://github.com/danielheimburg/msi-monitor-updater/releases/download/v0.5.0/MSI-Firmware-Updater-v0.5.0-macOS-arm64.zip) — macOS 14 or later. Unzip and move **MSI Firmware Updater.app** to Applications. This preview is not notarized.
+[Download v0.5.1 for Apple Silicon](https://github.com/danielheimburg/msi-monitor-updater/releases/download/v0.5.1/MSI-Firmware-Updater-v0.5.1-macOS-arm64.zip) — macOS 14 or later. Unzip and move **MSI Firmware Updater.app** to Applications. This preview is not notarized.
 
-See the [release notes](https://github.com/danielheimburg/msi-monitor-updater/releases/tag/v0.5.0) for known issues. Firmware is downloaded separately from MSI.
+See the [release notes](https://github.com/danielheimburg/msi-monitor-updater/releases/tag/v0.5.1) for known issues. Firmware is downloaded separately from MSI.
 
 ## Use
 
@@ -27,7 +27,7 @@ Connect the monitor directly with a reliable USB data cable. USB-C flashing was 
 
 The app compares installed and selected firmware, shows the image details, and reviews the write before starting it. Activity separates preservation, writing, final verification, restart and restoration; Help explains compatibility, privacy and recovery limits.
 
-Keep the Mac and monitor powered and connected throughout the operation. The display will go blank and USB will reconnect during the final restart. Completion requires firmware verification and restoration of the monitor's calibration and serial data.
+Keep the Mac and monitor powered and connected throughout the operation. The display can go blank during the final restart. The tested I2C path reconnects USB; UART profiles may keep the bridge attached. Completion requires firmware verification and restoration of the monitor's calibration and serial data.
 
 If an update stops, keep the monitor connected and preserve its complete record. Restarting the utility is not a resume procedure. Backup records and inspection output contain device-specific information and must remain private.
 
@@ -36,3 +36,15 @@ See [usage](docs/app/usage.md) for GUI and command-line details, [reliability an
 ## Build from source
 
 See the [maintainer build instructions](docs/app/release.md#build-an-app-bundle).
+
+## Reporting problems and contributing
+
+Use [GitHub Issues](https://github.com/danielheimburg/msi-monitor-updater/issues) for ordinary bugs. Include the app release, exact monitor model, installed and selected firmware versions, Mac/macOS version, cable/connection type, last visible phase and a redacted error message. State whether you actually tried the operation or only inspected a file. Do not reflash just to produce a report.
+
+Never attach full transaction/preparation records, `monitor.json`, raw USB captures, serial/calibration values, vendor firmware or screenshots showing identifying data and local paths. Keep complete records privately. Report vulnerabilities through the route in [SECURITY.md](SECURITY.md).
+
+Small, focused fixes and documentation improvements are welcome. Explain changed behavior and validation; distinguish offline evidence from hardware results. Adding a model requires evidence for its complete programming contract, not just a matching USB ID or scaler name. Do not upload proprietary firmware or vendor software in contributions.
+
+## License and attribution
+
+Original project code, documentation and icon are available under the [MIT license](LICENSE). See [research sources and third-party notices](THIRD_PARTY.md) for upstream attribution and exclusions. This project grants no rights to MSI's proprietary firmware, software or trademarks.

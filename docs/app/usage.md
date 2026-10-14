@@ -2,13 +2,13 @@
 
 ## Install the release
 
-[Download v0.5.0 for Apple Silicon](https://github.com/danielheimburg/msi-monitor-updater/releases/download/v0.5.0/MSI-Firmware-Updater-v0.5.0-macOS-arm64.zip), unzip it, and move **MSI Firmware Updater.app** to **Applications**. macOS 14 or later is required. Open the installed app with:
+[Download v0.5.1 for Apple Silicon](https://github.com/danielheimburg/msi-monitor-updater/releases/download/v0.5.1/MSI-Firmware-Updater-v0.5.1-macOS-arm64.zip), unzip it, and move **MSI Firmware Updater.app** to **Applications**. macOS 14 or later is required. Open the installed app with:
 
 ```sh
 open "/Applications/MSI Firmware Updater.app"
 ```
 
-See the [release notes](https://github.com/danielheimburg/msi-monitor-updater/releases/tag/v0.5.0) for known issues. No source checkout or build tools are needed.
+See the [release notes](https://github.com/danielheimburg/msi-monitor-updater/releases/tag/v0.5.1) for known issues. No source checkout or build tools are needed.
 
 ## Connection
 
@@ -24,7 +24,7 @@ Use a reliable USB-C data/video cable directly between the Mac and monitor. MSI'
 
 **Help** explains compatibility, connection/restart behavior and private records/recovery. The window defaults to 940 × 840 points, with an 860 × 800 minimum, and follows macOS appearance. Long warnings and paths wrap. Firmware selection uses the native file chooser restricted to `.bin` files; structural validation still decides admission.
 
-The display goes blank and USB disconnects during the intended final reset. A full programming indicator or device reappearance alone does not establish success. Completion requires reacquiring the matching monitor, restoring its preservation data and checking fresh firmware, calibration and serial responses.
+The display can go blank during the intended final reset. The tested I2C path disconnects and reconnects USB; UART profiles may keep the bridge attached. A full programming indicator or device reappearance alone does not establish success. Completion requires reacquiring the matching monitor, restoring its preservation data and checking fresh firmware, calibration and serial responses.
 
 Installed model/version come from repeated normal-mode reads; installed metadata is structurally checked independently of the destination image. Releases do not need catalog entries. The GUI displays downgrade warnings in Update and the review screen; the CLI prints one before ISP entry. Downgrades and other version transitions remain untested on hardware.
 
@@ -34,7 +34,7 @@ On failure, Activity retains the last reported phase, explains the stop and offe
 
 The downloaded app includes the command-line interface. These commands use the copy installed in Applications and work from any directory:
 
-For firmware updates in v0.5.0, use the GUI: a failed stderr destination can terminate a CLI update. The commands below document the interface; see the release notes before using its write commands.
+Progress messages go to stderr on a best-effort basis: a failed console destination does not interrupt the transaction. If the final JSON result cannot be written to stdout, the command exits with status 1; an update may already have completed, so use its saved transaction record to establish the outcome. A blocked output destination can still stall the command; use reliable local output destinations.
 
 ```sh
 msi_updater="/Applications/MSI Firmware Updater.app/Contents/MacOS/MSIUpdater"

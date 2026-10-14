@@ -55,7 +55,7 @@ struct ScalerISP: Sendable {
         return UInt16(reply[6]) << 8 | UInt16(reply[7])
     }
 
-    /// Exact A500/A300 pre-ID path from entry-exit.md; no post-ID protection setup.
+    /// A500/A300 pre-ID path in docs/msi/update-sequence.md; no protection setup.
     func initializeForIdentification() async throws -> UInt16 {
         let chip = try await identifyScaler()
         if transport == .i2c {

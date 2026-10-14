@@ -12,8 +12,11 @@ trap 'rm -rf "$staging_path"' EXIT
 staged_app_path="$staging_path/MSI Firmware Updater.app"
 mkdir -p "$staged_app_path/Contents/MacOS" "$staged_app_path/Contents/Resources"
 cp "$scratch_path/release/MSIUpdater" "$staged_app_path/Contents/MacOS/MSIUpdater"
+# Remove local debug/object paths from the distribution copy before signing.
+strip -S "$staged_app_path/Contents/MacOS/MSIUpdater"
 cp "$project_root/Resources/Info.plist" "$staged_app_path/Contents/Info.plist"
 cp "$project_root/Resources/AppIcon.icns" "$staged_app_path/Contents/Resources/AppIcon.icns"
+cp "$project_root/LICENSE" "$project_root/THIRD_PARTY.md" "$staged_app_path/Contents/Resources/"
 signing_identity="${SIGNING_IDENTITY:--}"
 signing_arguments=(--force --sign "$signing_identity")
 if [[ "$signing_identity" != - ]]; then

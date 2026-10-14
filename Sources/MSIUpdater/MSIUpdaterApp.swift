@@ -1,4 +1,5 @@
 import AppKit
+import Darwin
 import SwiftUI
 
 @main
@@ -36,7 +37,7 @@ enum MSIUpdaterMain {
             return
         }
         guard let command = Command(arguments) else {
-            FileHandle.standardError.write(Data("Usage: MSIUpdater [--inspect-image IMAGE | --inspect-monitor | --plan IMAGE SNAPSHOT_DIRECTORY | --prepare IMAGE RECORD_DIRECTORY | --update IMAGE RECORD_DIRECTORY | --update-fw046 IMAGE RECORD_DIRECTORY]\n".utf8))
+            writeCLIOutput("Usage: MSIUpdater [--inspect-image IMAGE | --inspect-monitor | --plan IMAGE SNAPSHOT_DIRECTORY | --prepare IMAGE RECORD_DIRECTORY | --update IMAGE RECORD_DIRECTORY | --update-fw046 IMAGE RECORD_DIRECTORY]\n")
             exit(2)
         }
         do {
@@ -84,17 +85,33 @@ enum MSIUpdaterMain {
                     result = try encoder.encode(await UpdatePreparation.run(image: image, device: device, parent: records))
                 case .update, .updateFW046:
                     let update = try await FirmwareUpdate.run(image: image, device: device, parent: records) { message in
-                        FileHandle.standardError.write(Data((message.message + "\n").utf8))
+                        writeCLIOutput(message.message + "\n")
                     }
                     result = try encoder.encode(update)
                 }
             }
-            print(String(decoding: result, as: UTF8.self))
+            guard writeCLIOutput(String(decoding: result, as: UTF8.self) + "\n", to: .standardOutput) else {
+                writeCLIOutput("Could not write the result to stdout. For an update, check the saved transaction record for its outcome.\n")
+                exit(1)
+            }
         } catch {
             var message = error.localizedDescription
             if let failure = error as? UpdateRecord.Failure { message += " Record: \(failure.recordDirectory.path)" }
-            FileHandle.standardError.write(Data((message + "\n").utf8))
+            writeCLIOutput(message + "\n")
             exit(1)
+        }
+    }
+
+    /// Console failures must not interrupt a firmware transaction. Suppress SIGPIPE
+    /// on this descriptor and use the throwing API instead of Objective-C exceptions.
+    @discardableResult
+    private static func writeCLIOutput(_ message: String, to handle: FileHandle = .standardError) -> Bool {
+        guard fcntl(handle.fileDescriptor, F_SETNOSIGPIPE, 1) == 0 else { return false }
+        do {
+            try handle.write(contentsOf: Data(message.utf8))
+            return true
+        } catch {
+            return false
         }
     }
 

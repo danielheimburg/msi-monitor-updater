@@ -67,6 +67,8 @@ A missing or malformed mutation reply stops without replay/reset. UART A1 can le
 
 ## Independent source code and evidence
 
+See [research attribution and upstream license notices](../../THIRD_PARTY.md).
+
 - [SergeyZh scaler/board research](https://github.com/SergeyZh/mpg-341cqpx-qd-oled-re/tree/4d04c2c16326a37e26da3ffdc47b54905e1702c5) supplies independent MPG341CQPX board, stock loader, 32 MiB flash and captured ISP analysis. Its modified controller/recovery extensions are not stock MSI commands.
 - [phfroidmont Linux updater](https://github.com/phfroidmont/msi-monitor-flash/tree/c0b58d8275d1ba8e2749ded82884a327661f8581) reports a successful MPG321URX FW021 reinstall with A500/C84018, 8 MiB slots and verified pages. Its source corroborates the smaller-capacity path; this report was not independently reproduced here.
 - [msigd](https://github.com/couriersud/msigd/tree/737a84fcfeb487226309e0cd585a05a08db6014a), [491CQP control](https://github.com/hamishmorgan/msi-mpg-491cqp-control/tree/4d9a6ed8e14893ff6cc216055ea3b8986e09cdf5) and [341C control](https://github.com/joshrzemien/msi-mpg341c/tree/a273bdf7d372d99a5483fe833120aa2babb971ba) contribute ordinary HID/model/KVM evidence. Their settings code does not implement this scaler updater or prove recovery.

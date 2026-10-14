@@ -11,7 +11,7 @@ Swift 6 and the macOS SDK are required. Run the packaging script from the reposi
 open "build/MSI Firmware Updater.app"
 ```
 
-It builds the release executable, assembles a fresh temporary bundle with the icon and bundle metadata, then signs and verifies it before replacing `build/MSI Firmware Updater.app`. Old bundle resources are not carried forward, and a signing or verification failure leaves the previous output in place. Build output is excluded from source control. The script does not access the monitor.
+It builds the release executable, assembles a fresh temporary bundle with the icon and bundle metadata, removes debug/object symbol records from the distribution executable, includes the license and research notices, then signs and verifies it before replacing `build/MSI Firmware Updater.app`. Old bundle resources are not carried forward, and a signing or verification failure leaves the previous output in place. Before upload, scan the final executable and archive for local workspace paths; stripping is not a substitute for inspecting the actual download. Build output is excluded from source control. The script does not access the monitor.
 
 The release command-line binary is `.build/release/MSIUpdater`. Its packaged copy is `build/MSI Firmware Updater.app/Contents/MacOS/MSIUpdater`; quote that path because the bundle name contains spaces. Open the GUI with `open "build/MSI Firmware Updater.app"`. All paths are relative to the repository directory.
 
@@ -30,6 +30,6 @@ iconutil --convert icns --output Resources/AppIcon.icns build/AppIcon.iconset
 
 ## Distribution contents
 
-Include only application assets, source and product/protocol documentation. Do not distribute vendor binaries, raw USB records, monitor backups or device-specific information. Firmware is obtained separately from MSI.
+Include only application assets, source, product/protocol documentation and their licenses/notices. The app bundle includes LICENSE and THIRD_PARTY.md under Contents/Resources; preserve them in the release archive. Do not distribute vendor binaries, raw USB records, monitor backups or device-specific information. Firmware is obtained separately from MSI.
 
 Retain the supported model/image restriction, accurate progress phases, private backup handling and failure behavior in distributed packages. Signing does not expand hardware support or provide interrupted-update recovery. The repository does not grant a redistribution license for proprietary MSI artifacts.
