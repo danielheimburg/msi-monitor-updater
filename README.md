@@ -2,7 +2,7 @@
 
 <img src="Resources/AppIcon.png" width="80" height="80" alt="MSI Firmware Updater icon">
 
-A native macOS utility for installing structurally compatible firmware on supported **MSI monitors**. Built with Swift and SwiftUI, with no third-party package dependencies. This is an independent utility and is not developed or endorsed by MSI.
+A native macOS utility for installing structurally compatible firmware on supported **MSI monitors**. This is an independent utility and is not developed or endorsed by MSI.
 
 **Status: preview, with broader support inferred from firmware and Windows-backend analysis.** This project has demonstrated MEG 342C FW046 reinstalls over USB-C. Additional model profiles and version transitions have been verified offline, not flashed by this project. Downgrades are allowed with a warning; version transitions remain untested on hardware. Automatic resume, rollback and damaged-firmware recovery remain unavailable.
 
@@ -19,7 +19,7 @@ The updater rejects unsupported images, hardware and installed layouts before pr
 
 Connect the monitor directly with a reliable USB data cable. USB-C flashing was demonstrated on the MEG 342C; internal UART versus I2C is a separate property of the model, not the external cable type. Release any virtual-machine USB passthrough and close other monitor-control applications. Select the official firmware and an existing private backup folder, then start the update.
 
-The native workspace compares installed and selected identities, exposes a complete image manifest, and reviews the write before starting it. Activity separates preservation, writing, final verification, restart and restoration; Help explains compatibility, privacy and recovery limits. See [the design system](DESIGN.md) for UI conventions.
+The app compares installed and selected firmware, shows the image details, and reviews the write before starting it. Activity separates preservation, writing, final verification, restart and restoration; Help explains compatibility, privacy and recovery limits.
 
 Keep the Mac and monitor powered and connected throughout the operation. The display will go blank and USB will reconnect during the final restart. Completion requires firmware verification and restoration of the monitor's calibration and serial data.
 
@@ -27,17 +27,11 @@ If an update stops, keep the monitor connected and preserve its complete record.
 
 See [usage](docs/app/usage.md) for GUI and command-line details, [reliability and failure handling](docs/app/reliability.md) for interruption behavior, and the [documentation index](docs/README.md) for protocol and firmware references.
 
-## Build
+## Build from source
 
 Swift 6 and the macOS SDK are required.
 
 ```sh
-/usr/sbin/taskpolicy -c utility nice -n 10 swift build -c release
-.build/release/MSIUpdater
-
-# Create an app bundle with its icon and a local signature:
 ./scripts/build-app.sh
 open "build/MSI Firmware Updater.app"
 ```
-
-The packaging script uses an ad-hoc signature by default. Developer ID signing and notarization are separate distribution requirements; see [packaging](docs/app/release.md).

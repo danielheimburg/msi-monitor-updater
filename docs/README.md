@@ -7,7 +7,7 @@ The updater parses compatible firmware images for the supported MSI scaler model
 - [Usage](app/usage.md): connection requirements, GUI, command line and private records.
 - [Architecture](app/architecture.md): ownership, update flow and failure boundaries.
 - [Reliability and failure handling](app/reliability.md): event delivery, timeouts and interruption limits.
-- [Packaging](app/release.md): building, signing and distribution requirements.
+- [Release maintenance](app/release.md): maintainer notes on packaging, signing and icons.
 
 ## MSI protocol
 

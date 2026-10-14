@@ -1,6 +1,6 @@
-# Packaging and distribution
+# Release maintenance
 
-The application is a preview with restricted hardware/bootloader profiles and structural firmware parser. The support expansion is validated through offline image parsing, modeled plans, release builds and local signature checks; it does not add hardware validation. The previous FW046 build supplies the existing hardware evidence. Developer ID signing, notarization and compatibility with every Mac or macOS release are not implied by a local build.
+Maintainer reference for app packaging, signing and icon generation. For running the app or its command-line interface, see [usage](usage.md).
 
 ## Build an app bundle
 
