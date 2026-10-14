@@ -7,3 +7,8 @@ records/
 *.bin
 *.pcap
 *.pcapng
+
+# Local Impeccable design workspace
+/.impeccable/
+/PRODUCT.md
+/DESIGN.md

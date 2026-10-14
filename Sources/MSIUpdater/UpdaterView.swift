@@ -2,12 +2,6 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-// THESIS: one inspectable firmware transaction, rather than a generic installer.
-// OWN-WORLD: native macOS surfaces, system typography, aligned facts and semantic status.
-// STORY: inspect the device and image, choose private records, review, then follow verification.
-// FIRST VIEWPORT: paired source/target identities above preservation and readiness; the action stays below.
-// FORM: service worksheet, candidate 5, seed 39385e4a. The lifecycle ledger follows actual backend phases.
-// FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance.
 @MainActor
 struct UpdaterView: View {
     private enum Workspace: String, CaseIterable {
