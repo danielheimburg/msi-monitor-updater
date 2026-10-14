@@ -15,6 +15,12 @@ A native macOS utility for installing structurally compatible firmware on suppor
 
 The updater rejects unsupported images, hardware and installed layouts before programming. Obtain firmware separately from [MSI's support page](https://www.msi.com/support). Proprietary firmware and MSI software are not distributed in this repository.
 
+## Download
+
+[Download v0.5.0 for Apple Silicon](https://github.com/danielheimburg/msi-monitor-updater/releases/download/v0.5.0/MSI-Firmware-Updater-v0.5.0-macOS-arm64.zip) — macOS 14 or later. Unzip and move **MSI Firmware Updater.app** to Applications. This preview is not notarized.
+
+See the [release notes](https://github.com/danielheimburg/msi-monitor-updater/releases/tag/v0.5.0) for known issues. Firmware is downloaded separately from MSI.
+
 ## Use
 
 Connect the monitor directly with a reliable USB data cable. USB-C flashing was demonstrated on the MEG 342C; internal UART versus I2C is a separate property of the model, not the external cable type. Release any virtual-machine USB passthrough and close other monitor-control applications. Select the official firmware and an existing private backup folder, then start the update.
