@@ -154,6 +154,7 @@ struct MSIUpdaterApp: App {
             UpdaterView()
                 .frame(minWidth: 560, minHeight: 430)
         }
+        .defaultSize(width: 640, height: 520)
         .windowResizability(.contentMinSize)
     }
 }
@@ -203,114 +204,117 @@ struct UpdaterView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            Text("MSI Firmware Updater").font(.title)
-            HStack {
-                Text("MSI scaler firmware · Preview").foregroundStyle(.secondary)
-                Spacer()
-                Button { showingHelp = true } label: { Image(systemName: "questionmark.circle") }
-                    .buttonStyle(.plain)
-                    .help("Compatibility, update requirements and privacy")
-                    .accessibilityLabel("Update help")
-            }
-
-            GroupBox("Monitor") {
-                VStack(alignment: .leading, spacing: 8) {
-                    if devices.isEmpty {
-                        Text("No compatible MSI controller found. Connect the monitor’s USB data cable.")
-                    }
-                    ForEach(devices) { device in
-                        Text(device.product)
-                        Text("USB controller connected").font(.caption).foregroundStyle(.secondary)
-                    }
-                    if devices.count > 1 {
-                        Text("Connect only the monitor you intend to update.").foregroundStyle(.orange)
-                    }
-                    HStack {
-                        Button("Refresh") { refresh() }.disabled(inspecting || updating)
-                        Button("Read monitor information") { Task { await inspect() } }
-                            .disabled(inspecting || updating || devices.count != 1)
-                        if inspecting { ProgressView().controlSize(.small) }
-                    }
-                    if let information {
-                        Text("\(FirmwareImage.modelProfiles.first(where: { $0.modelCode == information.model })?.modelName ?? "MSI monitor") · FW\(information.version) · preservation checksums verified")
-                    }
-                }.frame(maxWidth: .infinity, alignment: .leading)
-            }
-
-            GroupBox("Firmware") {
-                VStack(alignment: .leading, spacing: 8) {
-                    if let image {
-                        Text("\(image.profile.modelName) · FW\(image.version)")
-                        Text(image.url.lastPathComponent).textSelection(.enabled)
-                        Text("Firmware structure validated · \(image.bytes.count.formatted()) bytes")
-                            .font(.caption).foregroundStyle(.secondary)
-                        LabeledContent("Update method", value: "Novatek / Nuvoton")
-                            .font(.caption)
-                        LabeledContent("Internal connection", value: image.profile.transport.displayName)
-                            .font(.caption)
-                        LabeledContent("Panel", value: image.panel).font(.caption)
-                        Text("\(image.partitions.count) partitions · bounds and overlap checks passed")
-                            .font(.caption).foregroundStyle(.secondary)
-                        DisclosureGroup("Image checksum") {
-                            Text(image.sha256).font(.caption.monospaced()).textSelection(.enabled)
-                        }
-                        if let issue = compatibilityIssue {
-                            Text(issue).font(.caption).foregroundStyle(.orange)
-                        } else if let information {
-                            Text("FW\(information.version) → FW\(image.version). Flash identity and installed metadata are checked again before writing.")
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                        if let downgradeWarning {
-                            Text(downgradeWarning).font(.callout).foregroundStyle(.orange)
-                        }
-                        Text("Only MEG 342C FW046 reinstalls have been hardware-tested by this project.")
-                            .font(.caption).foregroundStyle(.secondary)
-                    } else {
-                        Text("Choose firmware for this monitor. Model, version, panel and layout are read from the file.")
-                    }
-                    Button("Choose firmware…") { choosingImage = true }.disabled(updating)
-                }.frame(maxWidth: .infinity, alignment: .leading)
-            }
-
-            if let error { Text(error).foregroundStyle(.red).textSelection(.enabled) }
-            Text("Downgrades show a warning before confirmation. Keep power and USB connected. The display will go blank and restart. Recovery after an interrupted or damaged update is unverified.")
-                .font(.callout).foregroundStyle(.secondary)
-            HStack {
-                Button("Choose backup folder…") { chooseRecordsDirectory() }.disabled(updating || inspecting)
-                if let recordsDirectory { Text(recordsDirectory.lastPathComponent).font(.caption) }
-                Spacer()
-                Button(image.map { "Update to FW\($0.version)…" } ?? "Update…") { confirmingUpdate = true }
-                    .disabled(updating || inspecting || devices.count != 1 || image == nil || information == nil || compatibilityIssue != nil || recordsDirectory == nil)
-            }
-            if let progress {
-                VStack(alignment: .leading, spacing: 8) {
-                    if case .programming(let completed, let total) = progress {
-                        ProgressView(value: Double(completed), total: Double(total))
-                            .accessibilityLabel("Firmware writing and verification")
-                            .accessibilityValue("\(Int(Double(completed) / Double(total) * 100)) percent")
-                        HStack {
-                            Text(progress.message)
-                            Spacer()
-                            Text("\(Int(Double(completed) / Double(total) * 100))%")
-                                .monospacedDigit()
-                        }
-                    } else {
-                        HStack {
-                            if updating { ProgressView().controlSize(.small) }
-                            Text(progress.message)
-                        }
-                    }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                Text("MSI Firmware Updater").font(.title)
+                HStack {
+                    Text("MSI scaler firmware · Preview").foregroundStyle(.secondary)
+                    Spacer()
+                    Button { showingHelp = true } label: { Image(systemName: "questionmark.circle") }
+                        .buttonStyle(.plain)
+                        .help("Compatibility, update requirements and privacy")
+                        .accessibilityLabel("Update help")
                 }
-                .font(.callout)
-                .textSelection(.enabled)
+
+                GroupBox("Monitor") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        if devices.isEmpty {
+                            Text("No compatible MSI controller found. Connect the monitor’s USB data cable.")
+                        }
+                        ForEach(devices) { device in
+                            Text(device.product)
+                            Text("USB controller connected").font(.caption).foregroundStyle(.secondary)
+                        }
+                        if devices.count > 1 {
+                            Text("Connect only the monitor you intend to update.").foregroundStyle(.orange)
+                        }
+                        HStack {
+                            Button("Refresh") { refresh() }.disabled(inspecting || updating)
+                            Button("Read monitor information") { Task { await inspect() } }
+                                .disabled(inspecting || updating || devices.count != 1)
+                            if inspecting { ProgressView().controlSize(.small) }
+                        }
+                        if let information {
+                            Text("\(FirmwareImage.modelProfiles.first(where: { $0.modelCode == information.model })?.modelName ?? "MSI monitor") · FW\(information.version) · preservation checksums verified")
+                        }
+                    }.frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                GroupBox("Firmware") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        if let image {
+                            Text("\(image.profile.modelName) · FW\(image.version)")
+                            Text(image.url.lastPathComponent).textSelection(.enabled)
+                            Text("Firmware structure validated · \(image.bytes.count.formatted()) bytes")
+                                .font(.caption).foregroundStyle(.secondary)
+                            LabeledContent("Update method", value: "Novatek / Nuvoton")
+                                .font(.caption)
+                            LabeledContent("Internal connection", value: image.profile.transport.displayName)
+                                .font(.caption)
+                            LabeledContent("Panel", value: image.panel).font(.caption)
+                            Text("\(image.partitions.count) partitions · bounds and overlap checks passed")
+                                .font(.caption).foregroundStyle(.secondary)
+                            DisclosureGroup("Image checksum") {
+                                Text(image.sha256).font(.caption.monospaced()).textSelection(.enabled)
+                            }
+                            if let issue = compatibilityIssue {
+                                Text(issue).font(.caption).foregroundStyle(.orange)
+                            } else if let information {
+                                Text("FW\(information.version) → FW\(image.version). Flash identity and installed metadata are checked again before writing.")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            if let downgradeWarning {
+                                Text(downgradeWarning).font(.callout).foregroundStyle(.orange)
+                            }
+                            Text("Only MEG 342C FW046 reinstalls have been hardware-tested by this project.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        } else {
+                            Text("Choose firmware for this monitor. Model, version, panel and layout are read from the file.")
+                        }
+                        Button("Choose firmware…") { choosingImage = true }.disabled(updating)
+                    }.frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                if let error { Text(error).foregroundStyle(.red).textSelection(.enabled) }
+                Text("Downgrades show a warning before confirmation. Keep power and USB connected. The display will go blank and restart. Recovery after an interrupted or damaged update is unverified.")
+                    .font(.callout).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack {
+                    Button("Choose backup folder…") { chooseRecordsDirectory() }.disabled(updating || inspecting)
+                    if let recordsDirectory { Text(recordsDirectory.lastPathComponent).font(.caption) }
+                    Spacer()
+                    Button(image.map { "Update to FW\($0.version)…" } ?? "Update…") { confirmingUpdate = true }
+                        .disabled(updating || inspecting || devices.count != 1 || image == nil || information == nil || compatibilityIssue != nil || recordsDirectory == nil)
+                }
+                if let progress {
+                    VStack(alignment: .leading, spacing: 8) {
+                        if case .programming(let completed, let total) = progress {
+                            ProgressView(value: Double(completed), total: Double(total))
+                                .accessibilityLabel("Firmware writing and verification")
+                                .accessibilityValue("\(Int(Double(completed) / Double(total) * 100)) percent")
+                            HStack {
+                                Text(progress.message)
+                                Spacer()
+                                Text("\(Int(Double(completed) / Double(total) * 100))%")
+                                    .monospacedDigit()
+                            }
+                        } else {
+                            HStack {
+                                if updating { ProgressView().controlSize(.small) }
+                                Text(progress.message)
+                            }
+                        }
+                    }
+                    .font(.callout)
+                    .textSelection(.enabled)
+                }
+                if let completedRecord {
+                    Button("Show update record") { NSWorkspace.shared.activateFileViewerSelecting([completedRecord]) }
+                }
+                Spacer(minLength: 0)
             }
-            if let completedRecord {
-                Button("Show update record") { NSWorkspace.shared.activateFileViewerSelecting([completedRecord]) }
-            }
-            Spacer(minLength: 0)
+            .padding(24)
         }
-        .padding(24)
         .task { refresh() }
         .sheet(isPresented: $showingHelp) {
             VStack(alignment: .leading, spacing: 16) {
@@ -338,7 +342,7 @@ struct UpdaterView: View {
             Text((downgradeWarning.map { $0 + "\n\n" } ?? "")
                 + "This writes the selected firmware. Keep this Mac and monitor powered and connected until verification finishes. Do not force quit; interrupted-update recovery is not verified.")
         }
-        .fileImporter(isPresented: $choosingImage, allowedContentTypes: [.data]) { result in
+        .fileImporter(isPresented: $choosingImage, allowedContentTypes: [UTType(filenameExtension: "bin", conformingTo: .data)!]) { result in
             do {
                 let url = try result.get()
                 let accessing = url.startAccessingSecurityScopedResource()
