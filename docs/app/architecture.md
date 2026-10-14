@@ -27,7 +27,7 @@ Offline image inspection and snapshot planning perform file operations only. GUI
 
 Only one exchange is outstanding at a time. Output completion and input arrival are independent events and may arrive in either order. A successful output callback means host submission completed; it does not establish a flash commit or a valid response. Framing and command-specific checks gate each dependent operation.
 
-Each native channel owns an exclusive device handle, input buffer, dedicated HID run loop and serial transaction queue. Native callbacks copy reports promptly. The queue owns request state, response validation and record ordering. Kernel timestamps older than the active request are rejected. Closing stops and unschedules native events before releasing the device and buffer.
+Each native channel owns an exclusive device handle, input buffer, dedicated HID run loop and serial transaction queue. Native callbacks copy reports promptly. The HID queue owns request state and response validation. UpdateRecord owns ordered, bounded storage work on a separate queue; asynchronous barriers gate device exchanges on their wire records. Kernel timestamps older than the active request are rejected. Closing stops and unschedules native events before releasing the device and buffer.
 
 Intent is flushed before destructive submissions. Failed or missing programming responses stop the transaction without replay. Reopening a host channel differs from restarting the monitor. Following the intended reset, reacquisition requires the matching USB serial/location and fresh normal-mode checks.
 
@@ -37,4 +37,4 @@ The app prevents a second update from its own window and rejects ordinary quit w
 
 Programming progress advances only after an operation's required completion and verification checks. Final readback, restart and preservation restoration remain separate phases. A full programming bar is not overall completion.
 
-Failures carry the record directory so the GUI can reveal it directly. Records contain sensitive monitor data and remain local. They are diagnostic records, not rollback images or a full flash backup.
+Failures carry the record directory so the GUI can reveal it directly. Records contain sensitive monitor data and remain local. New record directories use owner-only modes and verified empty macOS ACLs before sensitive children are created; parent permissions are preserved. They are diagnostic records, not rollback images or a full flash backup.

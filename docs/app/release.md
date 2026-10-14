@@ -10,9 +10,9 @@ Run the packaging script from the repository:
 ./scripts/build-app.sh
 ```
 
-It builds the release executable, copies the icon and bundle metadata into `build/MSI Firmware Updater.app`, signs the bundle and verifies the signature. Build output is excluded from source control. The script does not access the monitor.
+It builds the release executable, assembles a fresh temporary bundle with the icon and bundle metadata, then signs and verifies it before replacing `build/MSI Firmware Updater.app`. Old bundle resources are not carried forward, and a signing or verification failure leaves the previous output in place. Build output is excluded from source control. The script does not access the monitor.
 
-The default signature is ad-hoc. Set `SIGNING_IDENTITY` to an available Developer ID identity when preparing a signed distribution. Notarization and ticket stapling are separate steps. Do not label an ad-hoc package as notarized.
+The default signature is ad-hoc. Set `SIGNING_IDENTITY` to an available Developer ID identity when preparing a signed distribution; the script then enables hardened runtime and requests a secure timestamp. Notarization and ticket stapling are separate steps. Developer ID signing and notarization have not been validated by the local ad-hoc checks. Do not label an ad-hoc package as notarized.
 
 The bundle uses the project identifier `org.independent-tools.msi-firmware-updater`. Changing a bundle identifier can affect operating-system recognition of an installed app; replace earlier preview bundles rather than assuming they share an application identity.
 

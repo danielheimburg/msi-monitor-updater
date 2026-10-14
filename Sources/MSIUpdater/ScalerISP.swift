@@ -349,18 +349,9 @@ struct ScalerISP: Sendable {
     }
 
     private func writeMailbox(_ address: UInt8, _ value: UInt8) async throws {
-        let packet: [UInt8] = [0xBC, 0, 0, 0xB0, address, value]
-        do {
-            try await simpleAcknowledgement(packet, delay: 1)
-        } catch is HIDResponseTimeout where address == 0xFF && [UInt8(0xF2), 0xF3, 0xD0].contains(value) {
-            // FF selects the volatile I2C register page, never a flash commit.
-            // The host rebinds the same registry ID, serial and location. Do not
-            // insert a scaler query here: it may disturb a pending completion
-            // mailbox. Reselect once, then require the original dependent ACKs.
-            // E2=87 and every staging/commit command remain non-retriable.
-            try await session.reopenAfterReplyTimeout()
-            try await simpleAcknowledgement(packet, delay: 1)
-        }
+        // BC acknowledgements do not echo the address or value. Reopening and
+        // replaying could let a late ACK satisfy a different mailbox write.
+        try await simpleAcknowledgement([0xBC, 0, 0, 0xB0, address, value], delay: 1)
     }
 
     private func simpleAcknowledgement(_ payload: [UInt8], delay: UInt64) async throws {

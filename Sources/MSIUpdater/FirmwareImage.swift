@@ -1,4 +1,5 @@
 import CryptoKit
+import Darwin
 import Foundation
 
 struct UpdaterError: LocalizedError, Sendable {
@@ -39,13 +40,36 @@ struct FirmwareImage: Sendable {
     var paddedLength: Int { (bytes.count + Self.blockSize - 1) / Self.blockSize * Self.blockSize }
 
     init(url: URL) throws {
-        let properties = try url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
-        guard properties.isRegularFile == true, let size = properties.fileSize,
-              (0x8000...Self.bankSize).contains(size), size % 512 == 0 else {
+        // The descriptor binds validation and reading to one file, including
+        // when its path is replaced. Nonblocking open also prevents a FIFO from
+        // hanging before the regular-file check.
+        let descriptor = open(url.path, O_RDONLY | O_CLOEXEC | O_NONBLOCK)
+        guard descriptor >= 0 else { throw UpdaterError("Cannot open the firmware file: \(String(cString: strerror(errno))).") }
+        defer { Darwin.close(descriptor) }
+        var properties = stat()
+        guard fstat(descriptor, &properties) == 0 else { throw UpdaterError("Cannot inspect the opened firmware file.") }
+        guard properties.st_mode & mode_t(S_IFMT) == mode_t(S_IFREG),
+              (0x8000...off_t(Self.bankSize)).contains(properties.st_size), properties.st_size % 512 == 0 else {
             throw UpdaterError("Firmware must be a regular, 512-byte-aligned image between 32 KiB and 16 MiB.")
         }
-        let bytes = Array(try Data(contentsOf: url))
-        guard bytes.count == size else { throw UpdaterError("The firmware file changed while it was being read.") }
+        let size = Int(properties.st_size)
+        // Read one extra byte to reject growth without allocating an unbounded
+        // replacement. The parsed transaction owns these immutable bytes.
+        var bytes = [UInt8](repeating: 0, count: size + 1)
+        var count = 0
+        while count < bytes.count {
+            let received = bytes.withUnsafeMutableBytes { buffer in
+                Darwin.read(descriptor, buffer.baseAddress!.advanced(by: count), buffer.count - count)
+            }
+            if received < 0 {
+                if errno == EINTR { continue }
+                throw UpdaterError("Cannot read the firmware file: \(String(cString: strerror(errno))).")
+            }
+            if received == 0 { break }
+            count += received
+        }
+        guard count == size else { throw UpdaterError("The firmware file changed while it was being read.") }
+        bytes.removeLast()
         let partitions = try Self.parsePartitions(Array(bytes[0x6000..<0x7000]), imageLength: bytes.count)
         guard bytes[0x6048..<0x8000].allSatisfy({ $0 == 0 }),
               let end = partitions.map({ $0.offset + $0.length }).max(),

@@ -14,28 +14,30 @@ struct UpdatePreparation: Encodable, Sendable {
             reason: "Read and preserve MSI firmware metadata")
         defer { ProcessInfo.processInfo.endActivity(activity) }
         let record = try UpdateRecord(parent: parent)
-        let session = try HIDSession(identity: device, record: record)
+        var acquiredSession: HIDSession?
         var entered = false
         do {
+            let session = try HIDSession(identity: device, record: record)
+            acquiredSession = session
             let information = try await MonitorProtocol(session: session).information(identity: device)
             guard try await MonitorProtocol(session: session).information(identity: device) == information else {
                 throw UpdaterError("Repeated monitor identity or preservation reads disagree.")
             }
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            try record.preserve("monitor.json", data: encoder.encode(information))
-            try record.preserve("calibration.bin", data: Data(information.calibration))
-            try record.preserve("serial.bin", data: Data(information.serial))
+            try await record.preserve("monitor.json", data: encoder.encode(information))
+            try await record.preserve("calibration.bin", data: Data(information.calibration))
+            try await record.preserve("serial.bin", data: Data(information.serial))
             try image.requireCompatible(with: information)
-            try record.append("entering-diagnostic-isp", durable: true)
+            try await record.append("entering-diagnostic-isp", durable: true)
             // An uncertain entry still requires diagnostic cleanup. This path
             // never submitted a destructive command, so A1 is appropriate here.
             entered = true
             try await enterISP(session, interface: image.profile.interface)
             let isp = try await ScalerISP.connect(session: session, interface: image.profile.interface)
-            try record.preserve("hardware.json", data: JSONEncoder().encode(isp.hardware))
+            try await record.preserve("hardware.json", data: JSONEncoder().encode(isp.hardware))
             let plan = try await acquirePlan(image: image, installedVersion: information.version, isp: isp, record: record)
-            try record.append("diagnostic-reads-verified", durable: true)
+            try await record.append("diagnostic-reads-verified", durable: true)
             let reacquired = try await resetAndReacquire(session, previous: device, interface: image.profile.interface)
             entered = false
             let after = try await MonitorProtocol.inspect(reacquired)
@@ -43,23 +45,23 @@ struct UpdatePreparation: Encodable, Sendable {
                   after.calibration == information.calibration, after.serial == information.serial else {
                 throw UpdaterError("Monitor data changed across diagnostic preparation.")
             }
-            try record.preserve("postflight.json", data: encoder.encode(after))
-            try record.append("preparation-complete-no-flash", durable: true)
+            try await record.preserve("postflight.json", data: encoder.encode(after))
+            try await record.append("preparation-complete-no-flash", durable: true)
             return Self(information: information, plan: plan, recordDirectory: record.directory)
         } catch {
-            let failure = error
-            await session.close()
+            var failure = error.localizedDescription
+            await acquiredSession?.close()
             if entered {
                 // Cleanup must survive caller cancellation and unavailable storage.
                 // It runs only for this diagnostic path, which never writes flash.
                 let cleanupFailure = await exitFailedDiagnostic(device, interface: image.profile.interface)
                 if let cleanupFailure {
-                    try? record.append("diagnostic-exit-unverified", detail: cleanupFailure, durable: true)
-                    throw UpdaterError("\(failure.localizedDescription) Diagnostic exit could not be verified: \(cleanupFailure)")
+                    try? await record.append("diagnostic-exit-unverified", detail: cleanupFailure, durable: true)
+                    failure += " Diagnostic exit could not be verified: \(cleanupFailure)"
                 }
             }
-            try? record.append("preparation-failed-no-flash", detail: failure.localizedDescription, durable: true)
-            throw failure
+            try? await record.append("preparation-failed-no-flash", detail: failure, durable: true)
+            throw UpdateRecord.Failure(message: failure, recordDirectory: record.directory)
         }
     }
 
@@ -106,18 +108,17 @@ struct UpdatePreparation: Encodable, Sendable {
             }
         }
         let plan = try UpdatePlan(image: image, installedVersion: installedVersion, metadataSectors: metadata, bootCodeCopies: loaders, flashCapacity: isp.hardware.capacity)
-        try record.preserve("plan.json", data: JSONEncoder().encode(plan))
+        try await record.preserve("plan.json", data: JSONEncoder().encode(plan))
         return plan
     }
 
     private static func acquire(_ address: Int, count: Int, isp: ScalerISP, record: UpdateRecord) async throws -> [UInt8] {
         let name = String(format: "physical-%08X.bin", address)
-        try record.append("reading-preservation", detail: name)
-        // Every byte is subsequently checked by UpdatePlan against the pinned
-        // loader or a complete reviewed metadata sector. A second identical read
-        // adds no accepted state; retain repetition only for unknown data.
+        try await record.append("reading-preservation", detail: name)
+        // UpdatePlan checks boot bytes against the pinned loader and validates
+        // metadata structure and bank relationships before deriving any write.
         let bytes = try await isp.readPhysical(address: UInt32(address), count: count)
-        try record.preserve(name, data: Data(bytes))
+        try await record.preserve(name, data: Data(bytes))
         return bytes
     }
 

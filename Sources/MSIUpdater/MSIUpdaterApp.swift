@@ -79,7 +79,7 @@ enum MSIUpdaterMain {
             print(String(decoding: result, as: UTF8.self))
         } catch {
             var message = error.localizedDescription
-            if let failure = error as? FirmwareUpdate.Failure { message += " Record: \(failure.recordDirectory.path)" }
+            if let failure = error as? UpdateRecord.Failure { message += " Record: \(failure.recordDirectory.path)" }
             FileHandle.standardError.write(Data((message + "\n").utf8))
             exit(1)
         }
@@ -381,11 +381,12 @@ struct UpdaterView: View {
             let result = try await FirmwareUpdate.run(image: image, device: device, parent: recordsDirectory, confirmedVersion: information.version) { message in
                 await MainActor.run { progress = message }
             }
+            devices = [result.device]
             self.information = result.information
             completedRecord = result.recordDirectory
         } catch {
             progress = nil
-            completedRecord = (error as? FirmwareUpdate.Failure)?.recordDirectory
+            completedRecord = (error as? UpdateRecord.Failure)?.recordDirectory
             self.error = "Update stopped. \(error.localizedDescription)"
         }
     }

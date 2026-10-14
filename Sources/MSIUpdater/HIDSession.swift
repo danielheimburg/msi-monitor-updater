@@ -3,7 +3,7 @@ import IOKit.hid
 import Darwin
 
 /// A missing input reply is distinct from failed output, cancellation or removal.
-/// Only reads or explicitly idempotent volatile page selection may reopen.
+/// Only independently addressed physical reads may reopen.
 struct HIDResponseTimeout: LocalizedError, Sendable {
     var errorDescription: String? { "Monitor input reply timed out after successful output completion." }
 }
@@ -27,7 +27,20 @@ actor HIDSession {
         guard state == .ready else { throw UpdaterError("Monitor session is unavailable or busy.") }
         state = .exchanging
         defer { if state == .exchanging { state = .ready } }
-        return try await channel.exchange(packet, expectsReply: expectsReply)
+        try await record?.flush()
+        guard state == .exchanging else { throw UpdaterError("Monitor session closed while recording evidence.") }
+        let response: [UInt8]
+        do { response = try await channel.exchange(packet, expectsReply: expectsReply) }
+        catch {
+            let transportError = error
+            do { try await record?.flush() }
+            catch {
+                throw UpdaterError("\(transportError.localizedDescription) Evidence: \(error.localizedDescription)")
+            }
+            throw transportError
+        }
+        try await record?.flush()
+        return response
     }
 
     func close() async {
@@ -48,10 +61,11 @@ actor HIDSession {
             guard state == .reopening else { throw UpdaterError("Monitor session closed during reopen.") }
             // HIDChannel binds the same serial, location and registry service;
             // a device reset/re-enumeration therefore cannot pass this gate.
-            try record?.append("channel-reopen-intent", durable: true)
+            try await record?.append("channel-reopen-intent", durable: true)
+            guard state == .reopening else { throw UpdaterError("Monitor session closed while recording reopen intent.") }
             channel = try HIDChannel(identity: identity, record: record)
             state = .ready
-            try record?.append("channel-reopened", durable: true)
+            try await record?.append("channel-reopened", durable: true)
         } catch {
             state = .closed
             await channel.close()
@@ -301,12 +315,11 @@ final class HIDChannel: @unchecked Sendable {
     }
 
     private func log(_ operation: String, report: [UInt8]? = nil, result: Int32? = nil, detail: String? = nil) -> Bool {
-        do {
-            try record?.append(operation, detail: detail, report: report, result: result)
-            return true
-        } catch {
-            fail(UpdaterError("Update evidence could not be recorded: \(error.localizedDescription)"))
-            return false
+        guard let record else { return true }
+        return record.enqueueEvent(operation, detail: detail, report: report, result: result) { outcome in
+            if case .failure(let error) = outcome {
+                self.queue.async { self.fail(error) }
+            }
         }
     }
 }
