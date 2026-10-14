@@ -9,9 +9,6 @@ struct UpdatePreparation: Encodable, Sendable {
     let recordDirectory: URL
 
     static func run(image: FirmwareImage, device: MonitorDevice, parent: URL) async throws -> Self {
-        guard image.profile.isFlashSupported else {
-            throw UpdaterError("This model has offline image inspection only; no device access is supported.")
-        }
         let activity = ProcessInfo.processInfo.beginActivity(
             options: [.idleSystemSleepDisabled, .idleDisplaySleepDisabled, .suddenTerminationDisabled],
             reason: "Read and preserve MSI firmware metadata")
@@ -29,9 +26,6 @@ struct UpdatePreparation: Encodable, Sendable {
             try record.preserve("monitor.json", data: encoder.encode(information))
             try record.preserve("calibration.bin", data: Data(information.calibration))
             try record.preserve("serial.bin", data: Data(information.serial))
-            guard FirmwareImage.reviewedProfiles.contains(where: { $0.modelCode == information.model && $0.version == information.version }) else {
-                throw UpdaterError("The installed firmware version has no reviewed metadata profile.")
-            }
             try image.requireCompatible(with: information)
             try record.append("entering-diagnostic-isp", durable: true)
             // An uncertain entry still requires diagnostic cleanup. This path

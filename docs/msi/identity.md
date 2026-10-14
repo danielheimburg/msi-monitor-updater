@@ -9,7 +9,7 @@ The monitor, USB bridge, scaler and flash are separate components. Their firmwar
 | Nuvoton bridge | Part ID `01812610`, mapped by MSI to NUC1261LE4AE | APROM and LDROM are separate from scaler firmware. The app does not update either component. |
 | Scaler | ISP identity `A500` | Image strings `NT68501` and `NT68500` do not uniquely identify every physical silicon revision. |
 | SPI flash | JEDEC `C8 40 19`, 32 MiB | The supported programming profile uses vendor descriptor `4E`; exact chip revision is not uniquely identified by JEDEC alone. |
-| Scaler image | Six exact reviewed official MEG342C releases | Image identity is distinct from the installed version string or complete physical flash contents. |
+| Scaler image | Parsed model/version/panel and compatible structure | Image identity is distinct from the installed version string or complete physical flash contents. |
 
 ## Flash profile
 

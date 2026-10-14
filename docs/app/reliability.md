@@ -24,6 +24,6 @@ The expected reset differs from an unexpected removal during programming. A full
 
 ## Limits
 
-Only MEG 342C FW046 reinstalls have been hardware-tested by this project. Additional exact model/image profiles use inferred compatibility from their Windows callers, native backend, loaders and firmware. Runtime checks can refuse a unit with an unreviewed flash, controller descriptor or installed layout. Downgrades, modified images and damaged-firmware recovery are unavailable. macOS 14 is the deployment minimum; compatibility with every hardware, OS and cable combination is not guaranteed.
+Only MEG 342C FW046 reinstalls have been hardware-tested by this project. Additional model/branch profiles use inferred compatibility from their Windows callers, native backend, loaders and firmware. Runtime checks can refuse a unit with an unreviewed flash, controller descriptor or installed layout. Downgrades are permitted with a warning but remain untested on hardware. Structural acceptance cannot authenticate an image or guarantee valid application code; use MSI downloads. Damaged-firmware recovery is unavailable. macOS 14 is the deployment minimum; compatibility with every hardware, OS and cable combination is not guaranteed.
 
 The quit guard protects ordinary application exit only. Forced termination, power loss, cable removal and other monitor-control software can interrupt the transaction. Dual firmware banks do not establish a recovery guarantee.

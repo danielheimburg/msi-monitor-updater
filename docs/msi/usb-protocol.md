@@ -22,7 +22,7 @@ Normal request payloads are ASCII with a carriage return and zero padding. Repli
 
 | Request | Reply | Validation |
 |---|---|---|
-| `5800140\r` | Model, prefix `5b00140` | Three bytes: `30 30` followed by an exact catalog model code. |
+| `5800140\r` | Model, prefix `5b00140` | Three bytes: `30 30` followed by a supported model code. |
 | `58001<0\r` | Firmware, prefix `5b001<0` | Three ASCII digits. |
 | `58001?0\r` | Panel, prefix `5b001?0` | Length-prefixed ASCII panel, required for CURX branches. |
 | `580[000\r` | Calibration, prefix `5b00[` | Twelve bytes, additive byte checksum and CR. |

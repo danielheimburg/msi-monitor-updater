@@ -7,7 +7,7 @@ The executable uses Swift 6, Foundation, CryptoKit, IOKit HID, AppKit and SwiftU
 | Component | Responsibility |
 |---|---|
 | `MonitorDevice` | Discover the supported controller and bind its HID descriptor and USB identity. |
-| `FirmwareImage` | Validate reviewed catalog identities, applicable partitions and update policy; generate padded blocks and metadata. |
+| `FirmwareImage` | Parse model/version/panel records, validate the image envelope and boot contract; generate padded blocks and metadata. |
 | `HIDSession` / `HIDChannel` | Own one device and serialize asynchronous output, input, removal and timeout handling. |
 | `MonitorProtocol` | Read normal-mode information and restore calibration and serial data. |
 | `ScalerISP` | Identify the scaler and flash; perform physical reads, bank selection, protection changes, programming and checksums. |
@@ -21,9 +21,9 @@ The executable uses Swift 6, Foundation, CryptoKit, IOKit HID, AppKit and SwiftU
 
 Image and device validation precede programming. The plan uses fresh physical bytes; saved records cannot be decoded into executable resume plans. Unknown metadata, ambiguous markers and unsupported hardware are rejected.
 
-The active metadata must match the reported installed release, independently of the selected target. Expected final sectors apply the planned writes to preserved source sectors, retaining untouched predecessor tables. Final verification checks this successor rather than deriving a new plan from target-only assumptions. Each model’s known boot code is pinned. Additional models compare the entire immutable 24 KiB boot area; the existing MEG path preserves its measured 5 KiB copies and separately checks the upper boot tail before overwriting it.
+Normal-mode reads establish the installed model/version independently of the selected target; metadata validation establishes slot geometry, not a firmware version. Expected final sectors apply the planned writes to preserved source sectors, retaining untouched predecessor tables. Final verification checks this successor rather than deriving a new plan from target-only assumptions. Each model’s known boot code is pinned. Additional models compare the entire immutable 24 KiB boot area; the existing MEG path preserves its measured 5 KiB copies and separately checks the upper boot tail before overwriting it.
 
-Offline image inspection and snapshot planning perform file operations only. Catalogs explicitly distinguish inferred writer profiles from inspection-only backends. GUI, CLI and offline planning reject wrong models, hardware branches, required panels and downgrades. FirmwareCatalog owns reviewed artifact data; FirmwareImage owns parsing and policy.
+Offline image inspection and snapshot planning perform file operations only. GUI, CLI and offline planning reject wrong models, hardware branches and required panels. Downgrades are permitted with warnings. FirmwareModels owns model/branch/loader programming contracts rather than release hashes; FirmwareImage owns parsing and policy. A GUI update binds its confirmed installed version to a fresh read, so stale information cannot silently turn an upgrade into a downgrade.
 
 Only one exchange is outstanding at a time. Output completion and input arrival are independent events and may arrive in either order. A successful output callback means host submission completed; it does not establish a flash commit or a valid response. Framing and command-specific checks gate each dependent operation.
 

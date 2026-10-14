@@ -27,7 +27,7 @@ FW046 is the reference in this table. Releases033/035 use602 lower or608 upper i
 
 The totals include two destination-marker clears. Each clear programs 512 zero bytes and verifies a zero sum. The final image block contains 1,024 image bytes and 3,072 `FF` padding bytes.
 
-Metadata copies image `6000..6FFF`, adds the destination base to the addresses in nine descriptors and sets the last byte to `AA`. Lengths remain unchanged. Planning requires four full physical sectors at `6000`, `7000`, `01006000` and `01007000`, plus both boot copies. Unknown layouts are rejected. The normal-mode version must match exact recognized active metadata independently of the target. Expected final sectors are derived by applying ordered marker/table writes to the preserved originals, so untouched predecessor tables remain byte-identical.
+Metadata copies image `6000..6FFF`, adds the destination base to the addresses in nine descriptors and sets the last byte to `AA`. Lengths remain unchanged. Planning requires four full physical sectors at `6000`, `7000`, `01006000` and `01007000`, plus both boot copies. Unknown layouts are rejected. Repeated normal-mode reads supply installed identity/version; active metadata is structurally validated independently of the target. The table does not itself encode model/version. Expected final sectors are derived by applying ordered marker/table writes to the preserved originals, so untouched predecessor tables remain byte-identical.
 
 ## Ordering
 
@@ -39,4 +39,4 @@ Upper selection can begin during the lower-bank `7000` metadata write. Lower sel
 
 For 8 MiB and 16 MiB flash, the image slot base is 4 MiB and 8 MiB respectively. Both directions skip image `0000..7FFF`; there is one base metadata pair and no 16 MiB high-bank mirror. For 32 MiB, the recovered upper path also writes the first six image blocks and mirrors `7000` metadata. The app derives physical addresses from the verified capacity rather than reusing the MEG bank size.
 
-Additional loaders are pinned through `5FFF` because reachable code extends beyond `1400`. Zero-length table entries are kept at their original indices and relocated exactly as the native nine-record loop does. Active metadata recognition returns all matching reviewed versions, then requires the independently reported installed version. Exact blank or erased-and-marker-cleared inactive sectors can be preserved; arbitrary unknown sectors or ambiguous active markers cannot.
+Additional loaders are pinned through `5FFF` because reachable code extends beyond `1400`. Zero-length table entries are kept at their original indices and relocated exactly as the native nine-record loop does. Active metadata validation checks normalized slot addresses, bounds, alignment and reserved padding without a release hash lookup. Exact blank or erased-and-marker-cleared inactive sectors can be preserved; arbitrary unknown sectors or ambiguous active markers cannot.

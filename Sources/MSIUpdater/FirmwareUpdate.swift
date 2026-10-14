@@ -33,11 +33,8 @@ struct FirmwareUpdate: Encodable, Sendable {
     let destinationBank: Int
     let recordDirectory: URL
 
-    static func run(image: FirmwareImage, device: MonitorDevice, parent: URL,
+    static func run(image: FirmwareImage, device: MonitorDevice, parent: URL, confirmedVersion: String? = nil,
                     progress: @escaping @Sendable (Progress) async -> Void) async throws -> Self {
-        guard image.profile.isFlashSupported else {
-            throw UpdaterError("This model has offline image inspection only; no device access is supported.")
-        }
         let activity = ProcessInfo.processInfo.beginActivity(
             options: [.idleSystemSleepDisabled, .idleDisplaySleepDisabled, .suddenTerminationDisabled],
             reason: "Update MSI monitor firmware")
@@ -53,6 +50,13 @@ struct FirmwareUpdate: Encodable, Sendable {
                 throw UpdaterError("Repeated monitor identity or preservation reads disagree.")
             }
             try image.requireCompatible(with: information)
+            guard confirmedVersion == nil || confirmedVersion == information.version else {
+                throw UpdaterError("The installed version changed after confirmation. Read monitor information and confirm again.")
+            }
+            if let warning = image.downgradeWarning(installedVersion: information.version) {
+                await progress(.preparing(warning))
+                try record.append("downgrade-warning", detail: warning, durable: true)
+            }
             try record.preserve("monitor.json", data: JSONEncoder().encode(information))
             try record.preserve("calibration.bin", data: Data(information.calibration))
             try record.preserve("serial.bin", data: Data(information.serial))

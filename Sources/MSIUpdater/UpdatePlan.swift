@@ -1,7 +1,7 @@
 import CryptoKit
 import Foundation
 
-/// Offline dual-slot plan for reviewed A500/A300 images and 8/16/32MiB layouts.
+/// Offline dual-slot plan for compatible A500/A300 images and 8/16/32MiB layouts.
 /// The caller must establish that hardware profile and acquire these physical
 /// ranges freshly and consistently. A plan neither authorizes nor performs I/O.
 /// It is journal-encodable, but cannot be decoded into an executable plan: derive
@@ -61,6 +61,7 @@ struct UpdatePlan: Encodable, Sendable {
     let imageSHA256: String
     let installedVersion: String
     let targetVersion: String
+    let downgradeWarning: String?
     let selectedBank: Int
     let destinationBank: Int
     let verifiedRegions: [VerifiedRegion]
@@ -79,21 +80,18 @@ struct UpdatePlan: Encodable, Sendable {
         let bankSize = flashCapacity / 2
         let metadataAddresses = Self.metadataAddresses(capacity: flashCapacity)
         let bootCodeAddresses = Self.bootCodeAddresses(capacity: flashCapacity)
-        guard image.profile.isFlashSupported,
-              FirmwareImage.reviewedProfiles.contains(where: {
-                  $0.version == installedVersion && $0.modelCode == image.profile.modelCode
-                  && $0.loaderDigest == image.profile.loaderDigest
-              }),
+        guard installedVersion.count == 3, installedVersion.utf8.allSatisfy({ (48...57).contains($0) }),
+              installedVersion.first == image.version.first,
               Set(metadataSectors.keys) == Set(metadataAddresses),
               Set(bootCodeCopies.keys) == Set(bootCodeAddresses) else {
-            throw UpdaterError("Planning requires the reviewed image and every physical metadata/boot range.")
+            throw UpdaterError("Planning requires a compatible branch and every physical metadata/boot range.")
         }
 
         var verifiedRegions: [VerifiedRegion] = []
         for address in bootCodeAddresses {
             guard let bytes = bootCodeCopies[address],
                   bytes.count == image.profile.bootCodeLength,
-                  Self.digest(bytes) == image.profile.loaderDigest else {
+                  Self.digest(bytes) == image.loaderDigest else {
                 throw UpdaterError("A physical boot-code copy differs from the reviewed loader.")
             }
             verifiedRegions.append(Self.region(address, bytes))
@@ -113,45 +111,38 @@ struct UpdatePlan: Encodable, Sendable {
         }
         let erasedThenCleared = Array(repeating: UInt8(0xFF), count: 3584)
             + Array(repeating: UInt8(0), count: 512)
-        func reviewedSector(_ sector: [UInt8], base: Int, marker: UInt8) -> Bool {
-            sector.last == marker && FirmwareImage.metadataVersions(sector: sector, imageBase: base,
-                modelCode: image.profile.modelCode ?? 0, bankSize: bankSize).isEmpty == false
+        func validSector(_ sector: [UInt8], base: Int, marker: UInt8) -> Bool {
+            sector.last == marker && FirmwareImage.validMetadata(sector: sector, imageBase: base, bankSize: bankSize)
         }
-        // This one exact inactive predecessor was preserved in the original
-        // FW046 device state. It never establishes an active installed version.
-        let recordedOldLowerDigest = "5724ec5882a7a350fed80cb3077c7093dc4248c3f3538ca7e2b4e9c18df35c9f"
         let blankSector = Array(repeating: UInt8(0), count: FirmwareImage.blockSize)
-        func knownInactive(_ sector: [UInt8], base: Int) -> Bool {
-            sector == blankSector || sector == erasedThenCleared || reviewedSector(sector, base: base, marker: 0)
+        func validInactive(_ sector: [UInt8], base: Int) -> Bool {
+            sector == blankSector || sector == erasedThenCleared || validSector(sector, base: base, marker: 0)
         }
-        let knownInactiveLower = knownInactive(lower6000, base: 0)
-            || (image.profile.modelCode == 0x90 && installedVersion == "046" && Self.digest(lower6000) == recordedOldLowerDigest)
-        let knownInactiveUpper = knownInactive(upper6000, base: 0)
+        let validInactiveLower = validInactive(lower6000, base: 0)
+        let validInactiveUpper = validInactive(upper6000, base: 0)
 
         let selectedBank: Int
         if lower6000.last == 0, lower7000.last == 0xAA {
-            guard FirmwareImage.metadataVersions(sector: lower7000, imageBase: bankSize,
-                modelCode: image.profile.modelCode ?? 0, bankSize: bankSize).contains(installedVersion),
-                  upper7000 == lower7000, knownInactiveLower,
-                  (flashCapacity <= 0x1000000 || knownInactiveUpper) else {
-                throw UpdaterError("Upper-image metadata disagrees with the installed version or an inactive sector is unknown.")
+            guard FirmwareImage.validMetadata(sector: lower7000, imageBase: bankSize, bankSize: bankSize),
+                  upper7000 == lower7000, validInactiveLower,
+                  (flashCapacity <= 0x1000000 || validInactiveUpper) else {
+                throw UpdaterError("Upper-image metadata or an inactive sector has an unsupported structure.")
             }
             selectedBank = 1
         } else if lower6000.last == 0xAA, lower7000.last == 0 {
-            guard FirmwareImage.metadataVersions(sector: lower6000, imageBase: 0,
-                modelCode: image.profile.modelCode ?? 0, bankSize: bankSize).contains(installedVersion),
-                  knownInactive(lower7000, base: bankSize) else {
-                throw UpdaterError("Lower-image metadata disagrees with the installed version or its predecessor is unknown.")
+            guard FirmwareImage.validMetadata(sector: lower6000, imageBase: 0, bankSize: bankSize),
+                  validInactive(lower7000, base: bankSize) else {
+                throw UpdaterError("Lower-image metadata or its predecessor has an unsupported structure.")
             }
             // Upper→lower writes leave the previous upper table untouched.
-            // It must still be an exact reviewed sector, not a target-derived one.
-            let expectedAsymmetricState = reviewedSector(upper7000, base: bankSize, marker: 0xAA)
-                && lower7000 == Self.clearedMarkerPage(upper7000) && knownInactiveUpper
+            // Validate its own descriptors, independently of the target image.
+            let expectedAsymmetricState = validSector(upper7000, base: bankSize, marker: 0xAA)
+                && lower7000 == Self.clearedMarkerPage(upper7000) && validInactiveUpper
             let mirroredLowerState = upper6000 == lower6000 && upper7000 == lower7000
-            let blankUpperState = knownInactive(upper6000, base: 0)
-                && knownInactive(upper7000, base: bankSize)
+            let blankUpperState = validInactive(upper6000, base: 0)
+                && validInactive(upper7000, base: bankSize)
             guard expectedAsymmetricState || mirroredLowerState || blankUpperState else {
-                throw UpdaterError("The second bank is neither a reviewed retained upper image nor a matching lower mirror.")
+                throw UpdaterError("The second bank is neither a valid retained upper image nor a matching lower mirror.")
             }
             selectedBank = 0
         } else {
@@ -214,6 +205,7 @@ struct UpdatePlan: Encodable, Sendable {
         self.imageSHA256 = image.sha256
         self.installedVersion = installedVersion
         self.targetVersion = image.version
+        self.downgradeWarning = image.downgradeWarning(installedVersion: installedVersion)
         var expectedFinalRegions: [VerifiedRegion] = []
         for address in metadataAddresses {
             guard let bytes = finalMetadata[address] else {

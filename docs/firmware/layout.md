@@ -1,6 +1,6 @@
 # Reviewed image layouts
 
-Six exact official MEG342C releases are recognized; [support expansion](../msi/support-expansion.md) lists their identities. All six share the complete boot area, USB/ISP auxiliary payload and nine partition offsets. Their sizes and partition lengths differ. FW046 is the reference below.
+Six retained official MEG342C releases supplied the reference corpus; [support expansion](../msi/support-expansion.md) lists the investigated versions. All six share the complete boot area, USB/ISP auxiliary payload and nine partition offsets. Their sizes and partition lengths differ. FW046 is the reference below.
 
 The FW046 official image is 2,507,776 bytes (`0x264400`). Its padded 4 KiB extent is `0x265000`.
 
@@ -36,8 +36,8 @@ Code, strings, erased space and zero-filled regions are visible. Custom compress
 
 ## Model and EDID
 
-The compatibility marker `55 AA 66 99 55 41 52 54 90` is at `0x254628`. It identifies the model and is not an authenticity signature. The updater additionally requires the exact image SHA-256.
+The compatibility marker `55 AA 66 99 55 41 52 54 90` is at `0x254628`. It identifies the model and is not an authenticity signature. The updater reads this record from the application partition and cross-checks version/panel records and structural bounds; whole-image SHA-256 is recorded, not matched to a catalog.
 
 Thirty-two EDID templates begin at `0x118000` with `0x200` spacing through `0x11BE00`. Firmware templates are distinct from the EDID currently exposed by the monitor. Optional vendor EDID retention uses a fixed 64 KiB window at `0x118000`; backup mask `C0` does not select that branch.
 
-File sum16, packet XOR, EDID block sums and flash-page sum16 have different scopes. They do not establish cryptographic firmware authentication. RSA3 text alone does not identify update signing. Modified images are unsupported.
+File sum16, packet XOR, EDID block sums and flash-page sum16 have different scopes. They do not establish cryptographic firmware authentication. RSA3 text alone does not identify update signing. Structural checks do not establish authenticity or correctness of modified application code.

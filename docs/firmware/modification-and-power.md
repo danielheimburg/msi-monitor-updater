@@ -1,6 +1,6 @@
 # Firmware modification and power behavior
 
-The updater rejects modified images. Matching a file size or additive checksum does not establish acceptance by the monitor or safe behavior. Automatic rollback and damaged-firmware recovery are unavailable.
+The updater validates firmware structure and compatibility without a whole-file allowlist. It cannot detect arbitrary application-code modifications or authenticate origin; matching a file size or additive checksum does not establish acceptance by the monitor or safe behavior. Automatic rollback and damaged-firmware recovery are unavailable.
 
 ## Application mapping
 

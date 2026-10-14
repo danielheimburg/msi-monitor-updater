@@ -16,7 +16,8 @@ Optional vendor EDID retention is a separate operation. These records do not con
 
 | Check | Establishes | Limit |
 |---|---|---|
-| Exact image SHA-256 | Input matches the supported official byte sequence. | Does not establish compatibility of other images or complete installed-flash identity. |
+| Parsed image envelope | Model/version/panel records agree; file extent, alignment, descriptors and padding are valid. | Does not authenticate origin or validate every application instruction. |
+| Computed image SHA-256 | Identifies bytes used in the transaction record. | Never used as a release allowlist or proof of authenticity. |
 | Report length/ID/opcode/status/XOR | Response meets its command-specific framing contract. | Does not prove complete flash integrity. |
 | 512-byte additive checksum | Returned sum matches expected page data. | Not collision-resistant byte identity or authentication. |
 | Critical physical readback | Acquired boot/metadata/sample bytes match expected values. | Not a cryptographic comparison of every installed byte. |
