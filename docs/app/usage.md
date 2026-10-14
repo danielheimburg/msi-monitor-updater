@@ -1,5 +1,15 @@
 # Usage
 
+## Install the release
+
+[Download v0.5.0 for Apple Silicon](https://github.com/danielheimburg/msi-monitor-updater/releases/download/v0.5.0/MSI-Firmware-Updater-v0.5.0-macOS-arm64.zip), unzip it, and move **MSI Firmware Updater.app** to **Applications**. macOS 14 or later is required. Open the installed app with:
+
+```sh
+open "/Applications/MSI Firmware Updater.app"
+```
+
+See the [release notes](https://github.com/danielheimburg/msi-monitor-updater/releases/tag/v0.5.0) for known issues. No source checkout or build tools are needed.
+
 ## Connection
 
 Use a reliable USB-C data/video cable directly between the Mac and monitor. MSI's official instructions describe DisplayPort plus USB-B; this utility also supports USB-C on its specified monitor profile. Release the controller from virtual-machine USB passthrough and close other monitor-control applications.
@@ -22,18 +32,22 @@ On failure, Activity retains the last reported phase, explains the stop and offe
 
 ## Command line
 
-The GUI and CLI share the same update implementation. Run the following from the repository directory after building with `swift build -c release`:
+The downloaded app includes the command-line interface. These commands use the copy installed in Applications and work from any directory:
+
+For firmware updates in v0.5.0, use the GUI: a failed stderr destination can terminate a CLI update. The commands below document the interface; see the release notes before using its write commands.
 
 ```sh
-.build/release/MSIUpdater --inspect-monitor
-.build/release/MSIUpdater --inspect-image /path/to/firmware.bin
-.build/release/MSIUpdater --plan /path/to/MEG342C-image.bin /path/to/private-snapshot
-.build/release/MSIUpdater --update /path/to/MEG342C-image.bin /path/to/private-records
-.build/release/MSIUpdater --prepare /path/to/FW046.bin /path/to/private-records
-.build/release/MSIUpdater --update-fw046 /path/to/FW046.bin /path/to/private-records
+msi_updater="/Applications/MSI Firmware Updater.app/Contents/MacOS/MSIUpdater"
+
+"$msi_updater" --inspect-monitor
+"$msi_updater" --inspect-image /path/to/firmware.bin
+"$msi_updater" --plan /path/to/MEG342C-image.bin /path/to/private-snapshot
+"$msi_updater" --update /path/to/MEG342C-image.bin /path/to/private-records
+"$msi_updater" --prepare /path/to/FW046.bin /path/to/private-records
+"$msi_updater" --update-fw046 /path/to/FW046.bin /path/to/private-records
 ```
 
-For the packaged app, use `"build/MSI Firmware Updater.app/Contents/MacOS/MSIUpdater"` in place of `.build/release/MSIUpdater`. Both paths refer to release executables; the app bundle is created by `./scripts/build-app.sh`.
+If you keep the app elsewhere, change `msi_updater` to its `Contents/MacOS/MSIUpdater` path. Source-build paths are documented in [release maintenance](release.md).
 
 `--inspect-monitor` performs active normal-mode reads. Its JSON contains monitor-specific serial and calibration values; do not publish the output.
 

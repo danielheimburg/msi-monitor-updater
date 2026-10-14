@@ -35,9 +35,4 @@ See [usage](docs/app/usage.md) for GUI and command-line details, [reliability an
 
 ## Build from source
 
-Swift 6 and the macOS SDK are required.
-
-```sh
-./scripts/build-app.sh
-open "build/MSI Firmware Updater.app"
-```
+See the [maintainer build instructions](docs/app/release.md#build-an-app-bundle).

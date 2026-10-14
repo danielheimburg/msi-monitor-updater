@@ -4,10 +4,11 @@ Maintainer reference for app packaging, signing and icon generation. For running
 
 ## Build an app bundle
 
-Run the packaging script from the repository:
+Swift 6 and the macOS SDK are required. Run the packaging script from the repository:
 
 ```sh
 ./scripts/build-app.sh
+open "build/MSI Firmware Updater.app"
 ```
 
 It builds the release executable, assembles a fresh temporary bundle with the icon and bundle metadata, then signs and verifies it before replacing `build/MSI Firmware Updater.app`. Old bundle resources are not carried forward, and a signing or verification failure leaves the previous output in place. Build output is excluded from source control. The script does not access the monitor.
