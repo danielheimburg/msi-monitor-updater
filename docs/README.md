@@ -9,6 +9,9 @@ The updater parses compatible firmware images for the supported MSI scaler model
 - [Reliability and failure handling](app/reliability.md): event delivery, timeouts and interruption limits.
 - [Release maintenance](app/release.md): maintainer notes on packaging, signing and icons.
 
+- [Diagnostic reporting and privacy](app/diagnostics.md): default-on opt-out, report fields, retention and delivery limits.
+- [Report service operation](../reporting/README.md): deployment, access controls, abuse limits and shutdown.
+
 ## MSI protocol
 
 - [Support expansion](msi/support-expansion.md): model contracts, structural inspection and Windows backend differences.

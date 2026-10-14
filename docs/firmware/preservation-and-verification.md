@@ -30,4 +30,4 @@ Before restoring saved originals, the updater checks readiness and the reacquire
 
 ## Record privacy
 
-Backup directories and files use owner-only permissions. Raw reports can contain serial and calibration data even when a log does not label those fields. Keep records local and redact identifying values, local paths and raw payloads before sharing. The app provides no telemetry or upload feature.
+Backup directories and files use owner-only permissions. Raw reports can contain serial and calibration data even when a log does not label those fields. Keep records local and redact identifying values, local paths and raw payloads before sharing. Automatic reporting uses a separate allowlisted summary and can be disabled; see [diagnostics and privacy](../app/diagnostics.md). Private records are never uploaded.

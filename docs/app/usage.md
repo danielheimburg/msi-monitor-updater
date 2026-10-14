@@ -2,13 +2,13 @@
 
 ## Install the release
 
-[Download v0.5.1 for Apple Silicon](https://github.com/danielheimburg/msi-monitor-updater/releases/download/v0.5.1/MSI-Firmware-Updater-v0.5.1-macOS-arm64.zip), unzip it, and move **MSI Firmware Updater.app** to **Applications**. macOS 14 or later is required. Open the installed app with:
+[Download v0.6.0 for Apple Silicon](https://github.com/danielheimburg/msi-monitor-updater/releases/download/v0.6.0/MSI-Firmware-Updater-v0.6.0-macOS-arm64.zip), unzip it, and move **MSI Firmware Updater.app** to **Applications**. macOS 14 or later is required. Open the installed app with:
 
 ```sh
 open "/Applications/MSI Firmware Updater.app"
 ```
 
-See the [release notes](https://github.com/danielheimburg/msi-monitor-updater/releases/tag/v0.5.1) for known issues. No source checkout or build tools are needed.
+See the [release notes](https://github.com/danielheimburg/msi-monitor-updater/releases/tag/v0.6.0) for known issues. No source checkout or build tools are needed.
 
 ## Connection
 
@@ -20,7 +20,8 @@ Use a reliable USB-C data/video cable directly between the Mac and monitor. MSI'
 2. In **Update**, click **Read identity**. The app requires an exact recognized model response and valid preservation-data checksums. Installed and selected model, version and panel appear side by side; the panel must match the image.
 3. Choose an official `.bin` file for that model and hardware branch. **Image details** shows the parsed identity, internal transport, file and padded sizes, all partition offsets and lengths, image SHA-256 and bootloader SHA-256. Size, padding, version consistency, known bootloader and partition checks are required. Cancelling the file chooser preserves the existing selection.
 4. Choose an existing private folder for backups and the update record. Review the source and target, panel, record destination and warnings on the in-window review screen. **Cancel** returns without writing. Same-version updates are explicitly labeled **Reinstall**.
-5. Confirm the write, then follow **Activity** through Preserve, Write, Verify, Restart and Restore. Keep power and USB connected until final verification finishes. Normal quit is blocked while the operation is active.
+5. Review the default-checked diagnostic submission option. Uncheck to opt out; the choice is remembered. **What is sent & privacy** explains fields, destination and retention.
+6. Confirm the write, then follow **Activity** through Preserve, Write, Verify, Restart and Restore. Keep power and USB connected until final verification finishes. Normal quit is blocked while the operation is active.
 
 **Help** explains compatibility, connection/restart behavior and private records/recovery. The window defaults to 940 × 840 points, with an 860 × 800 minimum, and follows macOS appearance. Long warnings and paths wrap. Firmware selection uses the native file chooser restricted to `.bin` files; structural validation still decides admission.
 
@@ -59,8 +60,10 @@ If you keep the app elsewhere, change `msi_updater` to its `Contents/MacOS/MSIUp
 
 `--update` performs an actual update after fresh source/target validation. `--update-fw046` remains a compatibility alias restricted to MEG342C FW046. Both permit compatible downgrades and emit a warning before writing. Invocation is the write request; there is no additional interactive CLI confirmation. Failures exit with status 1; unsupported arguments exit with status 2. Progress goes to stderr and the successful result goes to stdout.
 
+Only update commands submit redacted reports, following the GUI preference (on by default). Append `--no-report` after the record-directory argument to opt out for one invocation. Reporting runs after writer cleanup, cannot change the firmware outcome and does not retry. A lost receipt leaves delivery unconfirmed. See [diagnostic reporting](diagnostics.md) for the schema and limits.
+
 ## Privacy
 
 Preparation and update operations create owner-only transaction directories for device identity, calibration/serial backups, boot/metadata bytes, the physical plan and raw HID exchanges. Inspection and offline planning print their results to stdout without creating a private transaction directory. Protect redirected output yourself; monitor inspection and plans can contain device-specific information. Keep the whole directory after failure; partial logs may omit the uncertain command boundary.
 
-Records are not executable resume plans or a complete flash backup. Before sharing diagnostic material, remove serial and calibration values, raw reports containing them, local filesystem paths and other identifying fields. No telemetry or upload feature is provided.
+Records are not executable resume plans or a complete flash backup. Before sharing diagnostic material, remove serial and calibration values, raw reports containing them, local filesystem paths and other identifying fields. A separate redacted report is submitted after update attempts unless opted out; see [diagnostic reporting](diagnostics.md). Private records are never uploaded.

@@ -17,15 +17,17 @@ The updater rejects unsupported images, hardware and installed layouts before pr
 
 ## Download
 
-[Download v0.5.1 for Apple Silicon](https://github.com/danielheimburg/msi-monitor-updater/releases/download/v0.5.1/MSI-Firmware-Updater-v0.5.1-macOS-arm64.zip) — macOS 14 or later. Unzip and move **MSI Firmware Updater.app** to Applications. This preview is not notarized.
+[Download v0.6.0 for Apple Silicon](https://github.com/danielheimburg/msi-monitor-updater/releases/download/v0.6.0/MSI-Firmware-Updater-v0.6.0-macOS-arm64.zip) — macOS 14 or later. Unzip and move **MSI Firmware Updater.app** to Applications. This preview is not notarized.
 
-See the [release notes](https://github.com/danielheimburg/msi-monitor-updater/releases/tag/v0.5.1) for known issues. Firmware is downloaded separately from MSI.
+See the [release notes](https://github.com/danielheimburg/msi-monitor-updater/releases/tag/v0.6.0) for known issues. Firmware is downloaded separately from MSI.
 
 ## Use
 
 Connect the monitor directly with a reliable USB data cable. USB-C flashing was demonstrated on the MEG 342C; internal UART versus I2C is a separate property of the model, not the external cable type. Release any virtual-machine USB passthrough and close other monitor-control applications. Select the official firmware and an existing private backup folder, then start the update.
 
 The app compares installed and selected firmware, shows the image details, and reviews the write before starting it. Activity separates preservation, writing, final verification, restart and restoration; Help explains compatibility, privacy and recovery limits.
+
+**Redacted reporting is on by default.** Uncheck it on the review screen to opt out; your choice is remembered. Reports cover successful and stopped attempts without serial/calibration data, raw USB traffic or local paths. Activity lets you preview/export the separate JSON summary. No GitHub account is needed. See [what is sent and privacy](docs/app/diagnostics.md).
 
 Keep the Mac and monitor powered and connected throughout the operation. The display can go blank during the final restart. The tested I2C path reconnects USB; UART profiles may keep the bridge attached. Completion requires firmware verification and restoration of the monitor's calibration and serial data.
 

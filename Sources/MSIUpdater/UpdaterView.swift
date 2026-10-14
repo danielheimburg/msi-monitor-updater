@@ -46,6 +46,11 @@ struct UpdaterView: View {
     @State private var outcome: Outcome?
     @State private var workspace: Workspace = .update
     @State private var helpTopic: HelpTopic = .compatibility
+    @AppStorage(DiagnosticSubmission.preferenceKey) private var submitDiagnostics = true
+    @State private var diagnosticReport: DiagnosticReport?
+    @State private var submissionStatus: String?
+    @State private var showingReport = false
+    @State private var showingPrivacy = false
 
     private var compatibilityIssue: String? {
         guard let image, let information else { return nil }
@@ -114,13 +119,13 @@ struct UpdaterView: View {
             Divider()
             Group {
                 if confirmingUpdate {
-                    confirmation
+                    ScrollView { confirmation }
                 } else {
                     TabView(selection: $workspace) {
                         updateWorkspace.tabItem { Text(Workspace.update.rawValue) }.tag(Workspace.update)
                         imageDetails.tabItem { Text(Workspace.image.rawValue) }.tag(Workspace.image)
-                        activity.tabItem { Text(Workspace.activity.rawValue) }.tag(Workspace.activity)
-                        help.tabItem { Text(Workspace.help.rawValue) }.tag(Workspace.help)
+                        ScrollView { activity }.tabItem { Text(Workspace.activity.rawValue) }.tag(Workspace.activity)
+                        ScrollView { help }.tabItem { Text(Workspace.help.rawValue) }.tag(Workspace.help)
                     }
                 }
             }
@@ -137,6 +142,28 @@ struct UpdaterView: View {
         }
         .background(Color(nsColor: .windowBackgroundColor))
         .task { refresh() }
+        .sheet(isPresented: $showingPrivacy) {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Diagnostic submission").font(.title2)
+                Text("After an update returns, the app sends one redacted report to this project's Google Cloud service in Finland. It includes app/macOS versions, selected model and panel, installed version when known, target version, image SHA-256 and size, partition count, internal transport, last phase, verified operation counts, duration and outcome. Each operation gets a fresh random receipt ID.")
+                Text("Serial numbers, calibration, USB identity/location, paths, filenames, raw USB packets, firmware bytes and error text are excluded. Full transaction records stay on your Mac. The service is operated by the project maintainer, not MSI; Google processes network metadata such as your IP address. Reports are untrusted self-reports, not proof of compatibility.")
+                Text("Submission is on by default. Uncheck it before writing to opt out; your choice is remembered. Failed uploads are not retried, and old reports are never sent automatically. Delivery does not change the update outcome. Closing the app may interrupt delivery. Stored reports are eligible for deletion after 90 days; cloud deletion is asynchronous and infrastructure logs have separate retention.")
+                Link("Privacy and service details", destination: DiagnosticSubmission.privacyURL)
+                Button("Done") { showingPrivacy = false }.keyboardShortcut(.cancelAction)
+            }
+            .font(.callout).fixedSize(horizontal: false, vertical: true).padding(24).frame(width: 560)
+        }
+        .sheet(isPresented: $showingReport) {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Redacted diagnostic report").font(.title2)
+                ScrollView {
+                    Text(diagnosticReport.flatMap { try? $0.data() }.map { String(decoding: $0, as: UTF8.self) } ?? "No report available")
+                        .font(.system(.callout, design: .monospaced)).textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                Button("Done") { showingReport = false }.keyboardShortcut(.cancelAction)
+            }.padding(24).frame(width: 560, height: 500)
+        }
     }
 
     private var updateWorkspace: some View {
@@ -319,6 +346,15 @@ struct UpdaterView: View {
                 Text(record.path).font(.callout).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
                 Button("Show update record") { NSWorkspace.shared.activateFileViewerSelecting([record]) }
             }
+            if diagnosticReport != nil {
+                Divider()
+                Text(submissionStatus ?? "Preparing redacted report…")
+                    .font(.callout).fixedSize(horizontal: false, vertical: true)
+                HStack {
+                    Button("View redacted report") { showingReport = true }
+                    Button("Export redacted report…") { exportDiagnosticReport() }
+                }
+            }
             Spacer(minLength: 0)
         }
         .padding(20)
@@ -340,7 +376,8 @@ struct UpdaterView: View {
                 helpSection("During restart", "The display goes blank and USB can disconnect during the intended final reset. The app waits for the matching monitor, checks firmware identity, restores preservation data and verifies it. A full writing bar or the monitor reappearing is not completion.")
                 helpSection("Let verification finish", "There is no cancel action after the update starts. Normal application quit is blocked until the operation returns. Forced termination, power loss and cable removal can interrupt the transaction; the quit guard cannot prevent them.")
             case .records:
-                helpSection("Keep records private", "Every update creates an owner-only transaction directory with device identity, calibration and serial backups, boot and metadata ranges, the plan and raw USB exchanges. These records contain device-specific information. No telemetry or upload feature is provided.")
+                helpSection("Keep records private", "Every update creates an owner-only transaction directory with device identity, calibration and serial backups, boot and metadata ranges, the plan and raw USB exchanges. These records contain device-specific information. Automatic reporting sends a separate allowlisted summary, never this directory. Activity offers a preview and export after each update attempt.")
+                reportingPreference
                 helpSection("If an update stops", "Preserve the complete record and keep the monitor powered and connected. An uncertain command is not automatically replayed. Restarting the app or rerunning an update is not a resume procedure.")
                 helpSection("Recovery boundary", "Records are evidence, not an executable recovery plan or complete flash backup. Automatic continuation, rollback and damaged-firmware recovery are unavailable. Dual banks do not establish a recovery guarantee.")
             }
@@ -368,6 +405,7 @@ struct UpdaterView: View {
             helpSection("Completion includes preservation", "A full writing bar is followed by final checks, restart and restoration. The app reports success only after fresh firmware, calibration and serial verification.")
             Text("Only MEG 342C FW046 reinstalls have been hardware-tested. Other model profiles and version transitions remain untested on hardware.")
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            reportingPreference
             Spacer(minLength: 0)
         }
         .padding(20)
@@ -475,6 +513,27 @@ struct UpdaterView: View {
         if panel.runModal() == .OK { recordsDirectory = panel.url }
     }
 
+    private var reportingPreference: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Toggle("Send a redacted diagnostic report after this update", isOn: $submitDiagnostics)
+                .disabled(updating)
+            Text("Includes successful and stopped attempts. No serial, calibration, raw traffic or file paths. Uncheck to opt out; your choice is remembered.")
+                .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Button("What is sent & privacy…") { showingPrivacy = true }.buttonStyle(.link)
+        }
+    }
+
+    private func exportDiagnosticReport() {
+        guard let diagnosticReport, let data = try? diagnosticReport.data() else { return }
+        let panel = NSSavePanel()
+        panel.title = "Export redacted diagnostics"
+        panel.nameFieldStringValue = "msi-report-\(diagnosticReport.id).json"
+        panel.allowedContentTypes = [.json]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do { try data.write(to: url, options: .atomic) }
+        catch { NSAlert(error: error).runModal() }
+    }
+
     private func update() async {
         guard canUpdate, !UpdaterApplicationDelegate.updateInProgress,
               let device = devices.first, let image, let information, let recordsDirectory else { return }
@@ -484,20 +543,31 @@ struct UpdaterView: View {
         error = nil
         outcome = nil
         progress = nil
+        diagnosticReport = nil
+        submissionStatus = nil
+        let reportingEnabled = submitDiagnostics
+        let diagnostics = UpdateDiagnostics(image: image, installedVersion: information.version)
         workspace = .activity
-        defer {
-            updating = false
-            UpdaterApplicationDelegate.updateInProgress = false
-        }
+        var verified = false
         do {
             let result = try await FirmwareUpdate.run(image: image, device: device, parent: recordsDirectory, confirmedVersion: information.version) { message in
+                await diagnostics.observe(message)
                 await MainActor.run { progress = message }
             }
             devices = [result.device]
             self.information = result.information
             outcome = .complete(result)
+            verified = true
         } catch {
             outcome = .stopped(error.localizedDescription, (error as? UpdateRecord.Failure)?.recordDirectory)
         }
+        // HID cleanup and the firmware outcome precede all report encoding/networking.
+        let report = await diagnostics.finish(verified: verified)
+        diagnosticReport = report
+        updating = false
+        UpdaterApplicationDelegate.updateInProgress = false
+        submissionStatus = reportingEnabled ? "Sending redacted report…" : "Not sent — diagnostic submission is off."
+        let status = await DiagnosticSubmission.submit(report, enabled: reportingEnabled)
+        if diagnosticReport?.id == report.id { submissionStatus = status }
     }
 }

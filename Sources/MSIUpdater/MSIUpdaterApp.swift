@@ -14,9 +14,15 @@ enum MSIUpdaterMain {
         case inspectMonitor
         case inspectImage(URL)
         case plan(image: URL, snapshot: URL)
-        case transaction(TransactionAction, image: URL, records: URL)
+        case transaction(TransactionAction, image: URL, records: URL, reporting: Bool)
 
         init?(_ arguments: [String]) {
+            var arguments = arguments
+            let reporting = arguments.last != "--no-report" && DiagnosticSubmission.enabled
+            if arguments.last == "--no-report" {
+                guard ["--update", "--update-fw046"].contains(arguments.first) else { return nil }
+                arguments.removeLast()
+            }
             switch (arguments.first, arguments.count) {
             case ("--inspect-monitor", 1): self = .inspectMonitor
             case ("--inspect-image", 2): self = .inspectImage(URL(fileURLWithPath: arguments[1]))
@@ -24,7 +30,7 @@ enum MSIUpdaterMain {
                 self = .plan(image: URL(fileURLWithPath: arguments[1]), snapshot: URL(fileURLWithPath: arguments[2], isDirectory: true))
             case (let flag?, 3):
                 guard let action = TransactionAction(rawValue: flag) else { return nil }
-                self = .transaction(action, image: URL(fileURLWithPath: arguments[1]), records: URL(fileURLWithPath: arguments[2], isDirectory: true))
+                self = .transaction(action, image: URL(fileURLWithPath: arguments[1]), records: URL(fileURLWithPath: arguments[2], isDirectory: true), reporting: reporting)
             default: return nil
             }
         }
@@ -37,7 +43,7 @@ enum MSIUpdaterMain {
             return
         }
         guard let command = Command(arguments) else {
-            writeCLIOutput("Usage: MSIUpdater [--inspect-image IMAGE | --inspect-monitor | --plan IMAGE SNAPSHOT_DIRECTORY | --prepare IMAGE RECORD_DIRECTORY | --update IMAGE RECORD_DIRECTORY | --update-fw046 IMAGE RECORD_DIRECTORY]\n")
+            writeCLIOutput("Usage: MSIUpdater [--inspect-image IMAGE | --inspect-monitor | --plan IMAGE SNAPSHOT_DIRECTORY | --prepare IMAGE RECORD_DIRECTORY | --update IMAGE RECORD_DIRECTORY [--no-report] | --update-fw046 IMAGE RECORD_DIRECTORY [--no-report]]\n")
             exit(2)
         }
         do {
@@ -73,7 +79,7 @@ enum MSIUpdaterMain {
                 result = try encoder.encode(offlinePlan(image: image, snapshot: snapshot))
             case .inspectMonitor:
                 result = try encoder.encode(await MonitorProtocol.inspect(connectedDevice()))
-            case .transaction(let action, let imageURL, let records):
+            case .transaction(let action, let imageURL, let records, let reporting):
                 // File/alias validation must still precede USB discovery.
                 let image = try FirmwareImage(url: imageURL)
                 if action == .updateFW046, image.version != "046" || image.profile.modelCode != 0x90 {
@@ -84,9 +90,23 @@ enum MSIUpdaterMain {
                 case .prepare:
                     result = try encoder.encode(await UpdatePreparation.run(image: image, device: device, parent: records))
                 case .update, .updateFW046:
-                    let update = try await FirmwareUpdate.run(image: image, device: device, parent: records) { message in
-                        writeCLIOutput(message.message + "\n")
+                    writeCLIOutput(reporting
+                        ? "Redacted reporting is on. Use --no-report to opt out. Privacy: \(DiagnosticSubmission.privacyURL)\n"
+                        : "Redacted reporting is off.\n")
+                    let diagnostics = UpdateDiagnostics(image: image)
+                    let update: FirmwareUpdate
+                    do {
+                        update = try await FirmwareUpdate.run(image: image, device: device, parent: records) { message in
+                            await diagnostics.observe(message)
+                            writeCLIOutput(message.message + "\n")
+                        }
+                    } catch {
+                        let report = await diagnostics.finish(verified: false)
+                        writeCLIOutput(await DiagnosticSubmission.submit(report, enabled: reporting) + "\n")
+                        throw error
                     }
+                    let report = await diagnostics.finish(verified: true)
+                    writeCLIOutput(await DiagnosticSubmission.submit(report, enabled: reporting) + "\n")
                     result = try encoder.encode(update)
                 }
             }
