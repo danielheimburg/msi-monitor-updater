@@ -2,13 +2,13 @@
 
 ## Install the release
 
-[Download v0.6.0 for Apple Silicon](https://github.com/danielheimburg/msi-monitor-updater/releases/download/v0.6.0/MSI-Firmware-Updater-v0.6.0-macOS-arm64.zip), unzip it, and move **MSI Firmware Updater.app** to **Applications**. macOS 14 or later is required. Open the installed app with:
+[Download v0.6.2 for Apple Silicon](https://github.com/danielheimburg/msi-monitor-updater/releases/download/v0.6.2/MSI-Firmware-Updater-v0.6.2-macOS-arm64.zip), unzip it, and move **MSI Firmware Updater.app** to **Applications**. macOS 14 or later is required. Open the installed app with:
 
 ```sh
 open "/Applications/MSI Firmware Updater.app"
 ```
 
-See the [release notes](https://github.com/danielheimburg/msi-monitor-updater/releases/tag/v0.6.0) for known issues. No source checkout or build tools are needed.
+See the [release notes](https://github.com/danielheimburg/msi-monitor-updater/releases/tag/v0.6.2) for known issues. No source checkout or build tools are needed.
 
 ## Connection
 

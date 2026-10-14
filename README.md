@@ -17,9 +17,9 @@ The updater rejects unsupported images, hardware and installed layouts before pr
 
 ## Download
 
-[Download v0.6.1 for Apple Silicon](https://github.com/danielheimburg/msi-monitor-updater/releases/download/v0.6.1/MSI-Firmware-Updater-v0.6.1-macOS-arm64.zip) — macOS 14 or later. Unzip and move **MSI Firmware Updater.app** to Applications. This preview is not notarized.
+[Download v0.6.2 for Apple Silicon](https://github.com/danielheimburg/msi-monitor-updater/releases/download/v0.6.2/MSI-Firmware-Updater-v0.6.2-macOS-arm64.zip) — macOS 14 or later. Unzip and move **MSI Firmware Updater.app** to Applications. This preview is not notarized.
 
-See the [release notes](https://github.com/danielheimburg/msi-monitor-updater/releases/tag/v0.6.1) for known issues. Firmware is downloaded separately from MSI.
+See the [release notes](https://github.com/danielheimburg/msi-monitor-updater/releases/tag/v0.6.2) for known issues. Firmware is downloaded separately from MSI.
 
 ## Use
 
