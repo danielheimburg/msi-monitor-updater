@@ -32,11 +32,12 @@ See [usage](docs/app/usage.md) for GUI and command-line details, [reliability an
 Swift 6 and the macOS SDK are required.
 
 ```sh
-/usr/sbin/taskpolicy -c utility nice -n 10 swift build
-.build/debug/MSIUpdater
+/usr/sbin/taskpolicy -c utility nice -n 10 swift build -c release
+.build/release/MSIUpdater
 
 # Create an app bundle with its icon and a local signature:
 ./scripts/build-app.sh
+open "build/MSI Firmware Updater.app"
 ```
 
 The packaging script uses an ad-hoc signature by default. Developer ID signing and notarization are separate distribution requirements; see [packaging](docs/app/release.md).

@@ -12,6 +12,8 @@ Run the packaging script from the repository:
 
 It builds the release executable, assembles a fresh temporary bundle with the icon and bundle metadata, then signs and verifies it before replacing `build/MSI Firmware Updater.app`. Old bundle resources are not carried forward, and a signing or verification failure leaves the previous output in place. Build output is excluded from source control. The script does not access the monitor.
 
+The release command-line binary is `.build/release/MSIUpdater`. Its packaged copy is `build/MSI Firmware Updater.app/Contents/MacOS/MSIUpdater`; quote that path because the bundle name contains spaces. Open the GUI with `open "build/MSI Firmware Updater.app"`. All paths are relative to the repository directory.
+
 The default signature is ad-hoc. Set `SIGNING_IDENTITY` to an available Developer ID identity when preparing a signed distribution; the script then enables hardened runtime and requests a secure timestamp. Notarization and ticket stapling are separate steps. Developer ID signing and notarization have not been validated by the local ad-hoc checks. Do not label an ad-hoc package as notarized.
 
 The bundle uses the project identifier `org.independent-tools.msi-firmware-updater`. Changing a bundle identifier can affect operating-system recognition of an installed app; replace earlier preview bundles rather than assuming they share an application identity.

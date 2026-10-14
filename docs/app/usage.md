@@ -22,16 +22,18 @@ On failure, Activity retains the last reported phase, explains the stop and offe
 
 ## Command line
 
-The GUI and CLI share the same update implementation. Run the following from the repository directory after building:
+The GUI and CLI share the same update implementation. Run the following from the repository directory after building with `swift build -c release`:
 
 ```sh
-.build/debug/MSIUpdater --inspect-monitor
-.build/debug/MSIUpdater --inspect-image /path/to/firmware.bin
-.build/debug/MSIUpdater --plan /path/to/MEG342C-image.bin /path/to/private-snapshot
-.build/debug/MSIUpdater --update /path/to/MEG342C-image.bin /path/to/private-records
-.build/debug/MSIUpdater --prepare /path/to/FW046.bin /path/to/private-records
-.build/debug/MSIUpdater --update-fw046 /path/to/FW046.bin /path/to/private-records
+.build/release/MSIUpdater --inspect-monitor
+.build/release/MSIUpdater --inspect-image /path/to/firmware.bin
+.build/release/MSIUpdater --plan /path/to/MEG342C-image.bin /path/to/private-snapshot
+.build/release/MSIUpdater --update /path/to/MEG342C-image.bin /path/to/private-records
+.build/release/MSIUpdater --prepare /path/to/FW046.bin /path/to/private-records
+.build/release/MSIUpdater --update-fw046 /path/to/FW046.bin /path/to/private-records
 ```
+
+For the packaged app, use `"build/MSI Firmware Updater.app/Contents/MacOS/MSIUpdater"` in place of `.build/release/MSIUpdater`. Both paths refer to release executables; the app bundle is created by `./scripts/build-app.sh`.
 
 `--inspect-monitor` performs active normal-mode reads. Its JSON contains monitor-specific serial and calibration values; do not publish the output.
 
