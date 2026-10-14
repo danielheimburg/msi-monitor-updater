@@ -77,7 +77,7 @@ actor UpdateDiagnostics {
 
 enum DiagnosticSubmission {
     static let preferenceKey = "submitRedactedDiagnostics"
-    static let endpoint = URL(string: "https://report-intake-1016177858486.europe-north1.run.app/v1/reports")!
+    static let endpoint = URL(string: "https://msi-updater-reports.daniel-heimburg.workers.dev/v1/reports")!
     static let privacyURL = URL(string: "https://github.com/danielheimburg/msi-monitor-updater/blob/main/docs/app/diagnostics.md")!
 
     static var enabled: Bool {
