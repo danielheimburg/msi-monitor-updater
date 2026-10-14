@@ -26,6 +26,8 @@ Optional vendor EDID retention is a separate operation. These records do not con
 
 Missing replies are errors, not zero-valued data. An uncertain commit is not automatically repeated. Final success requires critical readback, reset/reacquisition, restoration and fresh normal-mode verification.
 
+Before restoring saved originals, the updater checks readiness and the reacquired monitor's model, panel and destination version. It does not first require valid current calibration/serial: retained Windows code and the official FW046 update capture show those saved fields being restored directly after readiness. This removes a circular dependency without weakening original backup validation or final checksum/equality checks. Actual invalid-current-field behavior after a different firmware transition remains untested on hardware.
+
 ## Record privacy
 
 Backup directories and files use owner-only permissions. Raw reports can contain serial and calibration data even when a log does not label those fields. Keep records local and redact identifying values, local paths and raw payloads before sharing. The app provides no telemetry or upload feature.

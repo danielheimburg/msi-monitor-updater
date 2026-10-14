@@ -24,7 +24,7 @@ Normal request payloads are ASCII with a carriage return and zero padding. Repli
 |---|---|---|
 | `5800140\r` | Model, prefix `5b00140` | Three bytes: `30 30` followed by a supported model code. |
 | `58001<0\r` | Firmware, prefix `5b001<0` | Three ASCII digits. |
-| `58001?0\r` | Panel, prefix `5b001?0` | Length-prefixed ASCII panel, required for CURX branches. |
+| `58001?0\r` | Panel, prefix `5b001?0` | Length-prefixed ASCII panel. Accept compact CR termination or a zero-padded 28-byte name field followed by CR; require zero trailing bytes. Exact image-panel match applies to every model. |
 | `580[000\r` | Calibration, prefix `5b00[` | Twelve bytes, additive byte checksum and CR. |
 | `5800131\r` | Serial, prefix `5b00131` | Thirteen bytes, additive byte checksum and CR. |
 | `5800100\r` | Readiness | Exact reply `5b00100001\r`. |

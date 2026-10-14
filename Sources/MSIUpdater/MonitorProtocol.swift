@@ -13,6 +13,14 @@ struct MonitorInformation: Codable, Equatable, Sendable {
 }
 
 struct MonitorProtocol: Sendable {
+    /// Identity is readable before restoration without trusting current
+    /// calibration/serial. Full information still requires both valid checksums.
+    struct Identity: Sendable {
+        let model: UInt8
+        let version: String
+        let panel: String
+    }
+
     let session: HIDSession
 
     static func inspect(_ identity: MonitorDevice) async throws -> MonitorInformation {
@@ -32,7 +40,7 @@ struct MonitorProtocol: Sendable {
         return [id] + payload + Array(repeating: fill, count: 63 - payload.count)
     }
 
-    func information(identity: MonitorDevice) async throws -> MonitorInformation {
+    func identity() async throws -> Identity {
         let modelData = try await read("5800140\r", header: "5b00140", count: 3)
         guard modelData.prefix(2) == [0x30, 0x30],
               FirmwareImage.modelProfiles.contains(where: { $0.modelCode == modelData[2] }) else {
@@ -46,17 +54,30 @@ struct MonitorProtocol: Sendable {
         let prefix = [UInt8(1)] + Array("5b001?0".utf8)
         let length = Int(reply[prefix.count])
         let end = prefix.count + 1 + length
-        guard reply.starts(with: prefix), length > 0, end < reply.count,
-              reply[end] == 13, reply[(end + 1)...].allSatisfy({ $0 == 0 }),
+        guard reply.starts(with: prefix), length > 0, end < reply.count else {
+            throw UpdaterError("Invalid panel identity response.")
+        }
+        let compact = reply[end] == 13 && reply[(end + 1)...].allSatisfy({ $0 == 0 })
+        // Measured MEG342C replies reserve 28 name bytes before the CR. Accept
+        // that zero-padded field as well as the existing compact framing.
+        let paddedEnd = prefix.count + 1 + 28
+        let padded = end <= paddedEnd && reply[end..<paddedEnd].allSatisfy({ $0 == 0 })
+            && reply[paddedEnd] == 13 && reply[(paddedEnd + 1)...].allSatisfy({ $0 == 0 })
+        guard compact || padded,
               reply[(prefix.count + 1)..<end].allSatisfy({ (32...126).contains($0) }) else {
             throw UpdaterError("Invalid panel identity response.")
         }
         let panel = String(decoding: reply[(prefix.count + 1)..<end], as: UTF8.self)
+        return Identity(model: modelData[2], version: String(decoding: versionData, as: UTF8.self), panel: panel)
+    }
+
+    func information(identity: MonitorDevice) async throws -> MonitorInformation {
+        let current = try await self.identity()
         let calibration = try await read("580[000\r", header: "5b00[", count: 12, checksum: true)
         let serial = try await read("5800131\r", header: "5b00131", count: 13, checksum: true)
         return MonitorInformation(usbSerial: identity.serial, location: identity.location,
-            registryID: identity.id, model: modelData[2], version: String(decoding: versionData, as: UTF8.self),
-            calibration: calibration, serial: serial, panel: panel)
+            registryID: identity.id, model: current.model, version: current.version,
+            calibration: calibration, serial: serial, panel: current.panel)
     }
 
     /// Vendor C0 preservation transaction. The caller must use freshly acquired,

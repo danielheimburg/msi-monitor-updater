@@ -10,6 +10,8 @@ Private record initialization finishes before acquiring HID. Subsequent journal 
 
 Every response must satisfy its report length, ID, command status and checksum requirements before dependent work continues. One successful output callback does not prove that the device received, executed or acknowledged a command.
 
+Apple's [published macOS 26.4 run-loop implementation](https://github.com/apple-oss-distributions/IOKitUser/blob/323ead896d04424f87184d8f6ff0cce811aab106/hid.subproj/IOHIDDevice.c) explicitly aborts pending output callbacks when unscheduling. On the tested macOS 27.0.1 host, eight immediate-close read trials delivered eight aborted callbacks and released all eight output buffers and sessions. Older inspected sources lack that abort path: closing with output still pending may retain its context/session until process exit. Runtime behavior on those older systems remains unverified. The macOS 14 deployment minimum is not an all-version lifecycle guarantee; the app keeps native buffers alive until their callback rather than freeing them on a Swift timeout.
+
 ## Timeouts and retries
 
 A missing application reply can originate at the monitor, USB link, driver, competing consumer or application boundary. The error alone does not identify packet loss or prove that a command had no effect.
@@ -23,6 +25,8 @@ If an update fails after a destructive command may have been submitted, the app 
 ## Expected restart
 
 After programming and critical readback finish, the intended ISP exit resets the monitor. The tested I2C path removes its USB service; the UART path can retain the bridge and waits 30 seconds before normal-mode verification. The app reacquires a matching monitor by USB serial and location, waits for readiness, restores preservation data and checks fresh normal-mode responses.
+
+Before restoration, readiness and fresh model/version/panel must match the verified destination. The app does not require current calibration or serial to be readable at that point: the Windows updater restores its saved originals after readiness without those getters. Original backups must still have passed full validation before programming, every restore acknowledgement must match, and fresh checksum-valid calibration/serial must exactly match the originals afterward.
 
 The expected reset differs from an unexpected removal during programming. A full programming indicator, reset submission or USB reappearance is insufficient to report completion.
 

@@ -189,7 +189,10 @@ struct FirmwareUpdate: Encodable, Sendable {
             try await UpdatePreparation.selectInterface(0, session: session)
             let normal = MonitorProtocol(session: session)
             try await normal.requireReadyForRestore()
-            let beforeRestore = try await normal.information(identity: device)
+            // Vendor restoration does not require valid current calibration/serial.
+            // Verify the destination identity first, then validate all saved fields
+            // through fresh checksum-valid reads after the four restore ACKs.
+            let beforeRestore = try await normal.identity()
             guard beforeRestore.model == original.model, beforeRestore.panel == original.panel, beforeRestore.version == image.version else {
                 throw UpdaterError("Post-reset model or firmware does not match the requested update.")
             }
