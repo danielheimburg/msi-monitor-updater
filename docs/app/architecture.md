@@ -29,6 +29,8 @@ Only one exchange is outstanding at a time. Output completion and input arrival 
 
 Each native channel owns an exclusive device handle, input buffer, dedicated HID run loop and serial transaction queue. Native callbacks copy reports promptly. The HID queue owns request state and response validation. UpdateRecord owns ordered, bounded storage work on a separate queue; asynchronous barriers gate device exchanges on their wire records. Kernel timestamps older than the active request are rejected. Closing stops and unschedules native events before releasing the device and buffer.
 
+ScalerTransport owns the internal UART/I2C selector, report ID and names. Controller normal-mode selection remains a separate wire operation even though its selector shares the UART byte value.
+
 MonitorProtocol separates model/version/panel identity from full information. Preflight and final verification acquire all fields with preservation checksums; the pre-restore identity check does not depend on current preservation data.
 
 Intent is flushed before destructive submissions. Failed or missing programming responses stop the transaction without replay. Reopening a host channel differs from restarting the monitor. Following the intended reset, reacquisition requires the matching USB serial/location and fresh normal-mode checks.

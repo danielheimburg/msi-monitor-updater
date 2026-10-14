@@ -182,8 +182,10 @@ final class HIDChannel: @unchecked Sendable {
             IOHIDDeviceUnscheduleFromRunLoop(device, loop, CFRunLoopMode.defaultMode.rawValue)
             IOHIDDeviceClose(device, IOOptionBits(0))
             queue.async { [self] in
-                // Unscheduling aborts native async callbacks before freeing input.
-                // Already copied callbacks drain ahead of this state transition.
+                // Input is unscheduled; already copied callbacks drain before
+                // this transition. Output keeps its context until its actual
+                // completion/abort callback. Older macOS may retain pending
+                // output longer; see docs/app/reliability.md.
                 cancelled = true
                 fail(UpdaterError("Monitor input processing ended."))
                 input.deallocate()

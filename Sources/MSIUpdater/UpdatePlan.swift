@@ -9,7 +9,6 @@ import Foundation
 /// Bank selection and mutation ordering are documented in
 /// docs/firmware/boot-and-metadata.md and docs/msi/update-sequence.md.
 struct UpdatePlan: Encodable, Sendable {
-    static let bootCodeLength = 0x1400
     static let metadataAddresses = [0x6000, 0x7000, 0x1006000, 0x1007000]
     static let bootCodeAddresses = [0, 0x1000000]
 

@@ -36,7 +36,7 @@ Calibration/serial responses must come from the selected monitor. Do not use ano
 
 ISP handlers validate command-specific status, opcodes and XOR fields. An outer nonzero status is not universally the final operation result: C3 completion status `55` and failure status `05` have distinct meanings. An all-zero A0 failure does not identify scaler ID zero. UART replies have bridge status zero, so the interface-1 nonzero requirement does not apply; echoed outer command, report ID, inner complement and XOR checks remain mandatory.
 
-Register-read/write spacing is 5 ms. Sequencer execution waits 100 ms before the response and 200 ms afterward. Message XOR, calibration sum8 and flash-page sum16 are different algorithms.
+Register-read/write spacing is 5 ms. Sequencer execution awaits the HID transaction, retains a 100 ms settling delay, validates the sequencer acknowledgement, then waits an additional 200 ms before dependent work. Message XOR, calibration sum8 and flash-page sum16 are different algorithms.
 
 ## Failure semantics
 

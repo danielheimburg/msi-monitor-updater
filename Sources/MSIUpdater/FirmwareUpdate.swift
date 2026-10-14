@@ -63,8 +63,8 @@ struct FirmwareUpdate: Encodable, Sendable {
             try await record.preserve("serial.bin", data: Data(information.serial))
             try await record.append("entering-isp", durable: true)
             entered = true
-            try await UpdatePreparation.enterISP(session, interface: image.profile.interface)
-            let isp = try await ScalerISP.connect(session: session, interface: image.profile.interface)
+            try await UpdatePreparation.enterISP(session, transport: image.profile.transport)
+            let isp = try await ScalerISP.connect(session: session, transport: image.profile.transport)
             try await record.preserve("hardware.json", data: JSONEncoder().encode(isp.hardware))
             await progress(.preparing("Preserving boot code and firmware metadata"))
             let plan = try await UpdatePreparation.acquirePlan(image: image, installedVersion: information.version, isp: isp, record: record) { message in await progress(.preparing(message)) }
@@ -108,7 +108,7 @@ struct FirmwareUpdate: Encodable, Sendable {
                     bytes = Array(repeating: 0, count: 512)
                 }
                 let detail = String(format: "%d physical=%08X bytes=%d", index, operation.address, bytes.count)
-                let intent = image.profile.interface == 0 && bytes.count == FirmwareImage.blockSize
+                let intent = image.profile.transport == .uart && bytes.count == FirmwareImage.blockSize
                     ? "erase-program-sector-intent" : "program-intent"
                 try await record.append(intent, detail: detail, durable: true)
                 if bytes.count == FirmwareImage.blockSize {
@@ -137,7 +137,7 @@ struct FirmwareUpdate: Encodable, Sendable {
             try await verifyFinalLayout(plan: plan, isp: isp, record: record)
             try await record.append("all-programming-verified-reset-intent", durable: true)
             await progress(.restarting)
-            let returned = try await UpdatePreparation.resetAndReacquire(session, previous: device, interface: image.profile.interface)
+            let returned = try await UpdatePreparation.resetAndReacquire(session, previous: device, transport: image.profile.transport)
             entered = false
             await progress(.restoring)
             let restored = try await restoreAndVerify(information, image: image, device: returned, record: record)
@@ -150,7 +150,7 @@ struct FirmwareUpdate: Encodable, Sendable {
             if entered && !mutationStarted {
                 // No flash/protection writes: reuse diagnostic exit, independent
                 // of caller cancellation and any failed evidence storage.
-                let cleanupError = await UpdatePreparation.exitFailedDiagnostic(device, interface: image.profile.interface)
+                let cleanupError = await UpdatePreparation.exitFailedDiagnostic(device, transport: image.profile.transport)
                 if let cleanupError {
                     failure += " Diagnostic exit could not be verified: \(cleanupError)"
                     try? await record.append("diagnostic-exit-unverified", detail: cleanupError, durable: true)

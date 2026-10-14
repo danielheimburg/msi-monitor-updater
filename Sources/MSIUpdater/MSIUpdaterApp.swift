@@ -4,17 +4,39 @@ import UniformTypeIdentifiers
 
 @main
 enum MSIUpdaterMain {
+    private enum TransactionAction: String {
+        case prepare = "--prepare"
+        case update = "--update"
+        case updateFW046 = "--update-fw046"
+    }
+
+    private enum Command {
+        case inspectMonitor
+        case inspectImage(URL)
+        case plan(image: URL, snapshot: URL)
+        case transaction(TransactionAction, image: URL, records: URL)
+
+        init?(_ arguments: [String]) {
+            switch (arguments.first, arguments.count) {
+            case ("--inspect-monitor", 1): self = .inspectMonitor
+            case ("--inspect-image", 2): self = .inspectImage(URL(fileURLWithPath: arguments[1]))
+            case ("--plan", 3):
+                self = .plan(image: URL(fileURLWithPath: arguments[1]), snapshot: URL(fileURLWithPath: arguments[2], isDirectory: true))
+            case (let flag?, 3):
+                guard let action = TransactionAction(rawValue: flag) else { return nil }
+                self = .transaction(action, image: URL(fileURLWithPath: arguments[1]), records: URL(fileURLWithPath: arguments[2], isDirectory: true))
+            default: return nil
+            }
+        }
+    }
+
     @MainActor static func main() async {
         let arguments = Array(CommandLine.arguments.dropFirst())
         if arguments.isEmpty {
             MSIUpdaterApp.main()
             return
         }
-        let imageInspection = arguments.count == 2 && arguments[0] == "--inspect-image"
-        let planInspection = arguments.count == 3 && arguments[0] == "--plan"
-        let imageOperation = arguments.count == 3
-            && ["--prepare", "--update", "--update-fw046"].contains(arguments[0])
-        guard imageInspection || planInspection || imageOperation || arguments == ["--inspect-monitor"] else {
+        guard let command = Command(arguments) else {
             FileHandle.standardError.write(Data("Usage: MSIUpdater [--inspect-image IMAGE | --inspect-monitor | --plan IMAGE SNAPSHOT_DIRECTORY | --prepare IMAGE RECORD_DIRECTORY | --update IMAGE RECORD_DIRECTORY | --update-fw046 IMAGE RECORD_DIRECTORY]\n".utf8))
             exit(2)
         }
@@ -22,8 +44,9 @@ enum MSIUpdaterMain {
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             let result: Data
-            if imageInspection {
-                let image = try FirmwareImage(url: URL(fileURLWithPath: arguments[1]))
+            switch command {
+            case .inspectImage(let url):
+                let image = try FirmwareImage(url: url)
                 let modelCode = String(format: "%02X", image.profile.modelCode)
                 let inspection: [String: Any] = [
                     "version": image.version,
@@ -34,7 +57,7 @@ enum MSIUpdaterMain {
                     "paddedByteLength": image.paddedLength,
                     "flashEligibleModel": true,
                     "backend": "Novatek / Nuvoton",
-                    "internalTransport": image.profile.interface == 0 ? "UART" : "I2C",
+                    "internalTransport": image.profile.transport.name,
                     "requiredPanel": image.panel,
                     "panel": image.panel,
                     "sourceAuthenticityVerified": false,
@@ -45,35 +68,26 @@ enum MSIUpdaterMain {
                     "partitions": image.partitions.map { ["offset": $0.offset, "length": $0.length] }
                 ]
                 result = try JSONSerialization.data(withJSONObject: inspection, options: [.prettyPrinted, .sortedKeys])
-            } else if planInspection {
-                let image = try FirmwareImage(url: URL(fileURLWithPath: arguments[1]))
-                let snapshot = URL(fileURLWithPath: arguments[2], isDirectory: true)
+            case .plan(let imageURL, let snapshot):
+                let image = try FirmwareImage(url: imageURL)
                 result = try encoder.encode(offlinePlan(image: image, snapshot: snapshot))
-            } else {
-                // Validate the selected bytes and target policy before any USB discovery.
-                let image = imageOperation
-                    ? try FirmwareImage(url: URL(fileURLWithPath: arguments[1])) : nil
-                if let image {
-                    if arguments[0] == "--update-fw046", (image.version != "046" || image.profile.modelCode != 0x90) {
-                        throw UpdaterError("--update-fw046 accepts only MEG342C FW046. Use --update for other compatible images.")
-                    }
+            case .inspectMonitor:
+                result = try encoder.encode(await MonitorProtocol.inspect(connectedDevice()))
+            case .transaction(let action, let imageURL, let records):
+                // File/alias validation must still precede USB discovery.
+                let image = try FirmwareImage(url: imageURL)
+                if action == .updateFW046, image.version != "046" || image.profile.modelCode != 0x90 {
+                    throw UpdaterError("--update-fw046 accepts only MEG342C FW046. Use --update for other compatible images.")
                 }
-                let devices = try MonitorDevice.discover()
-                guard devices.count == 1, let device = devices.first else {
-                    throw UpdaterError("Connect exactly one supported monitor to macOS.")
-                }
-                if let image {
-                    let parent = URL(fileURLWithPath: arguments[2], isDirectory: true)
-                    if arguments[0] == "--prepare" {
-                        result = try encoder.encode(await UpdatePreparation.run(image: image, device: device, parent: parent))
-                    } else {
-                        let update = try await FirmwareUpdate.run(image: image, device: device, parent: parent) { message in
-                            FileHandle.standardError.write(Data((message.message + "\n").utf8))
-                        }
-                        result = try encoder.encode(update)
+                let device = try connectedDevice()
+                switch action {
+                case .prepare:
+                    result = try encoder.encode(await UpdatePreparation.run(image: image, device: device, parent: records))
+                case .update, .updateFW046:
+                    let update = try await FirmwareUpdate.run(image: image, device: device, parent: records) { message in
+                        FileHandle.standardError.write(Data((message.message + "\n").utf8))
                     }
-                } else {
-                    result = try encoder.encode(await MonitorProtocol.inspect(device))
+                    result = try encoder.encode(update)
                 }
             }
             print(String(decoding: result, as: UTF8.self))
@@ -83,6 +97,14 @@ enum MSIUpdaterMain {
             FileHandle.standardError.write(Data((message + "\n").utf8))
             exit(1)
         }
+    }
+
+    private static func connectedDevice() throws -> MonitorDevice {
+        let devices = try MonitorDevice.discover()
+        guard devices.count == 1, let device = devices.first else {
+            throw UpdaterError("Connect exactly one supported monitor to macOS.")
+        }
+        return device
     }
 
     /// An offline snapshot is diagnostic input only. Live updates acquire fresh state.
@@ -225,7 +247,7 @@ struct UpdaterView: View {
                             .font(.caption).foregroundStyle(.secondary)
                         LabeledContent("Update method", value: "Novatek / Nuvoton")
                             .font(.caption)
-                        LabeledContent("Internal connection", value: image.profile.interface == 0 ? "UART" : "I²C")
+                        LabeledContent("Internal connection", value: image.profile.transport.displayName)
                             .font(.caption)
                         LabeledContent("Panel", value: image.panel).font(.caption)
                         Text("\(image.partitions.count) partitions · bounds and overlap checks passed")

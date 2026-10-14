@@ -33,12 +33,12 @@ struct UpdatePreparation: Encodable, Sendable {
             // An uncertain entry still requires diagnostic cleanup. This path
             // never submitted a destructive command, so A1 is appropriate here.
             entered = true
-            try await enterISP(session, interface: image.profile.interface)
-            let isp = try await ScalerISP.connect(session: session, interface: image.profile.interface)
+            try await enterISP(session, transport: image.profile.transport)
+            let isp = try await ScalerISP.connect(session: session, transport: image.profile.transport)
             try await record.preserve("hardware.json", data: JSONEncoder().encode(isp.hardware))
             let plan = try await acquirePlan(image: image, installedVersion: information.version, isp: isp, record: record)
             try await record.append("diagnostic-reads-verified", durable: true)
-            let reacquired = try await resetAndReacquire(session, previous: device, interface: image.profile.interface)
+            let reacquired = try await resetAndReacquire(session, previous: device, transport: image.profile.transport)
             entered = false
             let after = try await MonitorProtocol.inspect(reacquired)
             guard after.model == information.model, after.panel == information.panel, after.version == information.version,
@@ -54,7 +54,7 @@ struct UpdatePreparation: Encodable, Sendable {
             if entered {
                 // Cleanup must survive caller cancellation and unavailable storage.
                 // It runs only for this diagnostic path, which never writes flash.
-                let cleanupFailure = await exitFailedDiagnostic(device, interface: image.profile.interface)
+                let cleanupFailure = await exitFailedDiagnostic(device, transport: image.profile.transport)
                 if let cleanupFailure {
                     try? await record.append("diagnostic-exit-unverified", detail: cleanupFailure, durable: true)
                     failure += " Diagnostic exit could not be verified: \(cleanupFailure)"
@@ -67,14 +67,14 @@ struct UpdatePreparation: Encodable, Sendable {
 
     /// Isolated from caller cancellation and failed journal storage. This may
     /// reset only a diagnostic session that has submitted no protection/flash write.
-    static func exitFailedDiagnostic(_ previous: MonitorDevice, interface: UInt8) async -> String? {
+    static func exitFailedDiagnostic(_ previous: MonitorDevice, transport: ScalerTransport) async -> String? {
         await Task.detached { () -> String? in
             do {
                 let current = try matchingDevice(previous)
                 let normal: MonitorDevice
                 if current.id == previous.id {
                     let cleanup = try HIDSession(identity: current)
-                    normal = try await resetAndReacquire(cleanup, previous: current, interface: interface)
+                    normal = try await resetAndReacquire(cleanup, previous: current, transport: transport)
                 } else {
                     // A fresh service may already be in normal mode. Never send
                     // an ISP command merely because an earlier service failed.
@@ -129,35 +129,35 @@ struct UpdatePreparation: Encodable, Sendable {
         }
     }
 
-    static func enterISP(_ session: HIDSession, interface: UInt8) async throws {
-        if interface == 0 {
-            try await selectInterface(0, session: session)
+    static func enterISP(_ session: HIDSession, transport: ScalerTransport) async throws {
+        if transport == .uart {
+            try await selectInterface(transport.rawValue, session: session)
             return
         }
         _ = try await session.exchange(MonitorProtocol.report(1, Array("580040:\r".utf8)), expectsReply: false)
         try await Task.sleep(for: .milliseconds(200))
-        try await selectInterface(1, session: session)
+        try await selectInterface(transport.rawValue, session: session)
         try await Task.sleep(for: .seconds(2))
     }
 
-    static func exitDiagnostic(_ session: HIDSession, interface: UInt8) async throws {
-        let payload: [UInt8] = interface == 0
+    static func exitDiagnostic(_ session: HIDSession, transport: ScalerTransport) async throws {
+        let payload: [UInt8] = transport == .uart
             ? [0xA1, 0, 0] + Array("#nvtISP_MODE_OFF#".utf8) + [0x6A, 0x82]
             : [0xA1, 0, 0, 4, 0x34, 6, 0x3C]
-        _ = try await session.exchange(MonitorProtocol.report(interface == 0 ? 2 : 4, payload), expectsReply: false)
+        _ = try await session.exchange(MonitorProtocol.report(transport.reportID, payload), expectsReply: false)
         await session.close()
     }
 
     /// Reset may remove the USB service before output completion. A fresh bound
     /// service, followed by the caller's normal-mode verification, decides success.
     /// Only call after non-flashing diagnostics or fully verified programming.
-    static func resetAndReacquire(_ session: HIDSession, previous: MonitorDevice, interface: UInt8) async throws -> MonitorDevice {
+    static func resetAndReacquire(_ session: HIDSession, previous: MonitorDevice, transport: ScalerTransport) async throws -> MonitorDevice {
         var submissionFailure: String?
-        do { try await exitDiagnostic(session, interface: interface) }
+        do { try await exitDiagnostic(session, transport: transport) }
         catch { submissionFailure = error.localizedDescription }
         await session.close()
         do {
-            if interface == 0 {
+            if transport == .uart {
                 // UART exit resets the scaler; it need not remove the USB bridge.
                 // The caller still verifies normal identity and preservation.
                 guard submissionFailure == nil else {

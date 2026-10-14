@@ -9,6 +9,17 @@ struct UpdaterError: LocalizedError, Sendable {
     init(_ message: String) { self.message = message }
 }
 
+/// The scaler's internal programming link, distinct from the normal-mode
+/// controller interface that also uses selector zero.
+enum ScalerTransport: UInt8, Sendable {
+    case uart = 0
+    case i2c = 1
+
+    var reportID: UInt8 { self == .uart ? 2 : 4 }
+    var name: String { self == .uart ? "UART" : "I2C" }
+    var displayName: String { self == .uart ? "UART" : "I²C" }
+}
+
 /// Parses the supported Novatek image envelope. A whole-file hash identifies the
 /// transaction record; it never admits an image or supplies its model/version.
 struct FirmwareImage: Sendable {
@@ -18,7 +29,7 @@ struct FirmwareImage: Sendable {
     struct ModelProfile: Sendable {
         let modelName: String
         let modelCode: UInt8
-        let interface: UInt8
+        let transport: ScalerTransport
         let loaderDigests: [String: String]
         var panels: [String: String] = [:]
         var bootCodeLength: Int { modelCode == 0x90 ? 0x1400 : 0x6000 }

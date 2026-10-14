@@ -41,6 +41,6 @@ The GUI and CLI share the same update implementation. Run the following from the
 
 ## Privacy
 
-Each operation creates an owner-only directory containing device identity, calibration/serial backups, boot/metadata bytes, physical plan and raw HID exchanges. Keep the whole directory after failure; partial logs may omit the uncertain command boundary.
+Preparation and update operations create owner-only transaction directories for device identity, calibration/serial backups, boot/metadata bytes, the physical plan and raw HID exchanges. Inspection and offline planning print their results to stdout without creating a private transaction directory. Protect redirected output yourself; monitor inspection and plans can contain device-specific information. Keep the whole directory after failure; partial logs may omit the uncertain command boundary.
 
 Records are not executable resume plans or a complete flash backup. Before sharing diagnostic material, remove serial and calibration values, raw reports containing them, local filesystem paths and other identifying fields. No telemetry or upload feature is provided.

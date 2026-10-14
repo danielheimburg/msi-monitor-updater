@@ -30,26 +30,24 @@ struct ScalerHardware: Codable, Sendable {
 struct ScalerISP: Sendable {
     let session: HIDSession
     let hardware: ScalerHardware
-    let interface: UInt8
+    let transport: ScalerTransport
 
-    private var reportID: UInt8 { interface == 0 ? 2 : 4 }
-
-    static func connect(session: HIDSession, interface: UInt8) async throws -> Self {
+    static func connect(session: HIDSession, transport: ScalerTransport) async throws -> Self {
         // This provisional identity permits only the identification sequence.
-        let probe = Self(session: session, hardware: ScalerHardware(scalerID: 0xA500, flashID: [0xC8, 0x40, 0x19]), interface: interface)
+        let probe = Self(session: session, hardware: ScalerHardware(scalerID: 0xA500, flashID: [0xC8, 0x40, 0x19]), transport: transport)
         let chip = try await probe.initializeForIdentification()
         let flash = try await probe.readJEDEC()
         let hardware = ScalerHardware(scalerID: chip, flashID: flash)
         try hardware.validate()
-        return Self(session: session, hardware: hardware, interface: interface)
+        return Self(session: session, hardware: hardware, transport: transport)
     }
 
     func identifyScaler() async throws -> UInt16 {
-        let request: [UInt8] = interface == 0
+        let request: [UInt8] = transport == .uart
             ? [0xA0, 0, 0] + Array("#nvtISP_MODE_ON#$$".utf8)
             : [0xA0, 0x6F, 0, 4, 0x34, 6, 0x36]
         let reply = try await exchange(request)
-        guard (interface == 0 || (reply[4] == 0x6F && reply[5] == 2)),
+        guard (transport == .uart || (reply[4] == 0x6F && reply[5] == 2)),
               [UInt8(0xA5), 0xA3].contains(reply[6]), reply[7] == 0,
               Self.xor(reply[4...7]) == reply[8] else {
             throw UpdaterError("The ISP controller is outside the reviewed nine-descriptor A500/A300 family.")
@@ -60,7 +58,7 @@ struct ScalerISP: Sendable {
     /// Exact A500/A300 pre-ID path from entry-exit.md; no post-ID protection setup.
     func initializeForIdentification() async throws -> UInt16 {
         let chip = try await identifyScaler()
-        if interface == 1 {
+        if transport == .i2c {
             try await writeRegister(0xF0E0, 0xAA)
             try await writeRegister(0xF0E2, 0xAA)
             let mode = try await readRegister(0xF049) & 0x0F
@@ -100,19 +98,11 @@ struct ScalerISP: Sendable {
     }
 
     enum StatusRegister: UInt8, Sendable {
-        case first = 0x05, second = 0x35, third = 0x15, extendedAddress = 0xC8
+        case extendedAddress = 0xC8
     }
 
     func readStatus(_ register: StatusRegister) async throws -> UInt8 {
         try await readSequence([register.rawValue], count: 1)[0]
-    }
-
-    func readSFDP(address: UInt32, count: Int) async throws -> [UInt8] {
-        guard count > 0, count <= 168, address < 0x1000000,
-              UInt64(address) + UInt64(count) <= 0x1000000 else {
-            throw UpdaterError("SFDP read exceeds the bounded 24-bit range.")
-        }
-        return try await readSequence([0x5A] + Self.address24(address) + [0], count: count)
     }
 
     /// Uses four-byte opcode0C for 32MiB, otherwise 24-bit opcode0B.
@@ -133,12 +123,12 @@ struct ScalerISP: Sendable {
                 : [UInt8(0x0B)] + Self.address24(current) + [0]
             do {
                 bytes += try await readSequence(command, count: chunk)
-            } catch is HIDResponseTimeout where interface == 1 {
+            } catch is HIDResponseTimeout where transport == .i2c {
                 // One host-only reopen per failed chunk. A second failure of
                 // this chunk propagates. Never replay program/erase, protection,
                 // bank selection or a completion/checksum transaction.
                 try await session.reopenAfterReplyTimeout()
-                guard interface == 1, try await identifyScaler() == hardware.scalerID,
+                guard transport == .i2c, try await identifyScaler() == hardware.scalerID,
                       try await readJEDEC() == hardware.flashID else {
                     throw UpdaterError("Flash identity changed after read-channel reopen.")
                 }
@@ -162,7 +152,7 @@ struct ScalerISP: Sendable {
         guard address < 0x1000000, address % 512 == 0 else {
             throw UpdaterError("Checksum requires an aligned bank-relative page address.") }
         let reply = try await command(0xB5, body: [0x6E, 4, 0x36] + Self.address24(address), delay: 10)
-        guard (interface == 0 || (reply[4] == 0x6F && reply[5] == 3)), reply[6] == 0xC9,
+        guard (transport == .uart || (reply[4] == 0x6F && reply[5] == 3)), reply[6] == 0xC9,
               Self.xor(reply[4...8]) == reply[9] else {
             throw UpdaterError("Invalid flash-page checksum response.")
         }
@@ -176,7 +166,7 @@ struct ScalerISP: Sendable {
             throw UpdaterError("The flash identity changed before programming.")
         }
         try await writeRegister(0xF067, 0x20)
-        if interface == 1 {
+        if transport == .i2c {
             try await simpleAcknowledgement([0xAD, 0, 0, 0x6E, 2, 0x99, 0, 0xF5], delay: 10)
         } else {
             let reply = try await command(0xAD, body: [0x6E, 2, 0x99, 0], delay: 10)
@@ -247,7 +237,7 @@ struct ScalerISP: Sendable {
         guard address < 0x1000000, address % 4096 == 0, bytes.count == 4096 else {
             throw UpdaterError("Programming requires one aligned bank-relative4KiB block.")
         }
-        if interface == 0 {
+        if transport == .uart {
             try await eraseSector(address: address)
             for offset in stride(from: 0, to: bytes.count, by: 512) {
                 try await programPage(address: address + UInt32(offset), bytes: Array(bytes[offset..<(offset + 512)]))
@@ -296,7 +286,7 @@ struct ScalerISP: Sendable {
     /// This is one sector from the vendor's B2 range command; never batch across
     /// a preserved metadata or boot range. The plan owns destination selection.
     private func eraseSector(address: UInt32) async throws {
-        guard interface == 0, address % 4096 == 0, address < 0x1000000 else {
+        guard transport == .uart, address % 4096 == 0, address < 0x1000000 else {
             throw UpdaterError("Invalid UART sector erase range.")
         }
         let sector = address / 4096
@@ -324,7 +314,7 @@ struct ScalerISP: Sendable {
         }
         let tail = Array(bytes[468..<512])
         checksum ^= Self.xor(tail)
-        let reply = try await exchange([0xB8, interface == 1 ? 0x6F : 0, 0] + tail + [checksum], delay: 10)
+        let reply = try await exchange([0xB8, transport == .i2c ? 0x6F : 0, 0] + tail + [checksum], delay: 10)
         guard reply[6] == 0xC3, Self.xor(reply[4...6]) == reply[7] else {
             throw UpdaterError("Invalid page-program acknowledgement; outcome is uncertain.")
         }
@@ -355,19 +345,19 @@ struct ScalerISP: Sendable {
     }
 
     private func simpleAcknowledgement(_ payload: [UInt8], delay: UInt64) async throws {
-        if interface == 0 {
-            _ = try await session.exchange(MonitorProtocol.report(reportID, payload), expectsReply: false)
+        if transport == .uart {
+            _ = try await session.exchange(MonitorProtocol.report(transport.reportID, payload), expectsReply: false)
             try await pause(delay)
             return
         }
         let reply = try await exchange(payload, delay: delay)
-        guard reply == (try MonitorProtocol.report(reportID, [payload[0], 1])) else {
+        guard reply == (try MonitorProtocol.report(transport.reportID, [payload[0], 1])) else {
             throw UpdaterError("Invalid programming/setup acknowledgement; stop without retry.")
         }
     }
 
     private func sendFragment(_ payload: [UInt8]) async throws {
-        _ = try await session.exchange(MonitorProtocol.report(reportID, payload), expectsReply: false)
+        _ = try await session.exchange(MonitorProtocol.report(transport.reportID, payload), expectsReply: false)
     }
 
     private func readSequence(_ spi: [UInt8], count: Int) async throws -> [UInt8] {
@@ -414,12 +404,12 @@ struct ScalerISP: Sendable {
     }
 
     private func command(_ opcode: UInt8, body: [UInt8], delay: UInt64 = 0) async throws -> [UInt8] {
-        try await exchange([opcode, interface == 1 ? 0x6F : 0, 0] + body + [Self.xor(body)], delay: delay)
+        try await exchange([opcode, transport == .i2c ? 0x6F : 0, 0] + body + [Self.xor(body)], delay: delay)
     }
 
     private func exchange(_ payload: [UInt8], delay: UInt64 = 0) async throws -> [UInt8] {
-        let reply = try await session.exchange(MonitorProtocol.report(reportID, payload))
-        guard reply.count == 64, reply[0] == reportID, reply[1] == payload[0], (interface == 0 || reply[2] != 0) else {
+        let reply = try await session.exchange(MonitorProtocol.report(transport.reportID, payload))
+        guard reply.count == 64, reply[0] == transport.reportID, reply[1] == payload[0], (transport == .uart || reply[2] != 0) else {
             throw UpdaterError("Unexpected ISP response; stop this session.") }
         // Async HID reception remains active. Retain at least the vendor's delay
         // before any dependent command, even when a reply arrives immediately.
