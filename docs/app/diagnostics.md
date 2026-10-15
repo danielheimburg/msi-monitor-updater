@@ -26,7 +26,7 @@ After an attempt, Activity offers **View redacted report** and **Export redacted
 
 ## Processing and retention
 
-Reports go over HTTPS to the maintainer's Cloudflare Worker and are stored in a private Cloudflare D1 database in the EU jurisdiction. The Worker runs on Cloudflare's global network; EU database residency does not mean EU-only network processing. Cloudflare processes network metadata such as the sender's IP address, including for short-lived rate limiting. These are **redacted reports**, not a promise of anonymity. The service does not store IP addresses in report rows, set tracking cookies or require an account. Application observability is disabled and the intake does not log report bodies or request metadata. Cloudflare's platform/security/account logs and processing are separate from report retention.
+Reports go over HTTPS to `https://msi-updater-reports.daniel-heimburg.workers.dev/v1/reports` and are stored in a private Cloudflare D1 database in the EU jurisdiction. The Worker runs on Cloudflare's global network; EU database residency does not mean EU-only network processing. Cloudflare processes network metadata such as the sender's IP address, including for short-lived rate limiting. These are **redacted reports**, not a promise of anonymity. The service does not store IP addresses in report rows, set tracking cookies or require an account. Application observability is disabled and the intake does not log report bodies or request metadata. Cloudflare's platform/security/account logs and processing are separate from report retention.
 
 After storing a non-synthetic report, the Worker also attempts to email its technical summary and receipt to the maintainer. The email contains only selected fields from the same redacted report, with no private transaction records or additional device data. It is a separate mailbox copy, outside D1's EU residency and automatic deletion policy; mailbox retention is separate. Synthetic reports do not trigger email. Notification delivery is best effort and is not retried; a failed email does not change report acceptance or the firmware outcome.
 
@@ -42,4 +42,4 @@ The writer and HID cleanup finish before encoding or HTTP submission. Reporting 
 
 A crash, force quit or process kill before a terminal result produces no automatic report; it is not recorded as a fabricated success or failure. Closing the app while delivery is pending can prevent submission. Local private transaction records remain the evidence source for interrupted operations. Network-reporting validation does not establish firmware or recovery safety.
 
-See [service operation](../../reporting/README.md) for deployment, limits, inspection and shutdown.
+The collector is maintained and deployed separately from the updater. This document remains the public report schema and privacy contract; the app does not require access to the collector repository.

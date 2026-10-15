@@ -12,9 +12,3 @@ records/
 /.impeccable/
 /PRODUCT.md
 /DESIGN.md
-
-# Local reporting tools, runtime state and credentials
-.wrangler/
-/reporting/node_modules/
-/reporting/.env*
-/reporting/.dev.vars*
